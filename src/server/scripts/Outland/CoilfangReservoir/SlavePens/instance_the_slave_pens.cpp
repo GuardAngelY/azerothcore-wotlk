@@ -1,14 +1,14 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
@@ -23,24 +23,40 @@
 */
 
 #include "Creature.h"
+#include "InstanceMapScript.h"
 #include "InstanceScript.h"
 #include "Map.h"
-#include "ScriptMgr.h"
 #include "the_slave_pens.h"
+
+ObjectData const creatureData[] =
+{
+    { NPC_QUAGMIRRAN,               DATA_QUAGMIRRAN        },
+    { NPC_AHUNE,                    DATA_AHUNE             },
+    { NPC_AHUNE_LOC_BUNNY,          DATA_AHUNE_BUNNY       },
+    { NPC_FROZEN_CORE,              DATA_FROZEN_CORE       },
+    { NPC_SHAMAN_BONFIRE_BUNNY_000, DATA_BONFIRE_BUNNY_000 },
+    { NPC_SHAMAN_BONFIRE_BUNNY_001, DATA_BONFIRE_BUNNY_001 },
+    { NPC_SHAMAN_BONFIRE_BUNNY_002, DATA_BONFIRE_BUNNY_002 },
+    { NPC_SHAMAN_BEAM_BUNNY_000,    DATA_BEAM_BUNNY_000    },
+    { NPC_SHAMAN_BEAM_BUNNY_001,    DATA_BEAM_BUNNY_001    },
+    { NPC_SHAMAN_BEAM_BUNNY_002,    DATA_BEAM_BUNNY_002    },
+    { NPC_LUMA_SKYMOTHER,           DATA_LUMA_SKYMOTHER    },
+    { 0,                            0                      }
+};
 
 class instance_the_slave_pens : public InstanceMapScript
 {
 public:
-    instance_the_slave_pens() : InstanceMapScript(SPScriptName, 547) { }
+    instance_the_slave_pens() : InstanceMapScript(SPScriptName, MAP_COILFANG_THE_SLAVE_PENS) { }
 
     struct instance_the_slave_pens_InstanceMapScript : public InstanceScript
     {
         instance_the_slave_pens_InstanceMapScript(Map* map) : InstanceScript(map)
         {
+            SetHeaders(DataHeader);
+            LoadObjectData(creatureData, nullptr);
             counter = DATA_FLAMECALLER_000;
         }
-
-        void Load(char const* /*data*/) override { LoadBossState(DataHeader); }
 
         void OnCreatureCreate(Creature* creature) override
         {
@@ -83,6 +99,8 @@ public:
                 default:
                     break;
             }
+
+            InstanceScript::OnCreatureCreate(creature);
         }
 
         void SetGuidData(uint32 data, ObjectGuid guid) override

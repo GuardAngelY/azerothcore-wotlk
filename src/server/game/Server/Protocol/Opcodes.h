@@ -1,14 +1,14 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
@@ -1353,9 +1353,10 @@ typedef Opcodes OpcodeServer;
 /// Player state
 enum SessionStatus
 {
-    STATUS_AUTHED = 0,                                      // Player authenticated (_player == nullptr, m_GUID has garbage)
+    STATUS_AUTHED = 0,                                      // Player authenticated (_player == nullptr, m_playerRecentlyLogout = false or will be reset before handler call, m_GUID have garbage)
     STATUS_LOGGEDIN,                                        // Player in game (_player != nullptr, m_GUID == _player->GetGUID(), inWorld())
     STATUS_TRANSFER,                                        // Player transferring to another map (_player != nullptr, m_GUID == _player->GetGUID(), !inWorld())
+    STATUS_LOGGEDIN_OR_RECENTLY_LOGGOUT,                    // _player != nullptr or _player == nullptr && m_playerRecentlyLogout && m_playerLogout, m_GUID store last _player guid)
     STATUS_NEVER,                                           // Opcode not accepted from client (deprecated or server side only)
     STATUS_UNHANDLED,                                       // Opcode not handled yet
 };

@@ -1,30 +1,25 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-/* ScriptData
-SDName: Instance_ZulGurub
-SD%Complete: 80
-SDComment: Missing reset function after killing a boss for Ohgan, Thekal.
-SDCategory: Zul'Gurub
-EndScriptData */
-
+#include "GameEventMgr.h"
 #include "GameObjectAI.h"
+#include "GameObjectScript.h"
+#include "InstanceMapScript.h"
 #include "InstanceScript.h"
-#include "ScriptMgr.h"
 #include "zulgurub.h"
 
 DoorData const doorData[] =
@@ -38,18 +33,20 @@ ObjectData const creatureData[] =
     { NPC_HIGH_PRIEST_THEKAL, DATA_THEKAL  },
     { NPC_ZEALOT_LORKHAN,     DATA_LORKHAN },
     { NPC_ZEALOT_ZATH,        DATA_ZATH    },
-    { NPC_PRIESTESS_MARLI,    DATA_MARLI   }
+    { NPC_PRIESTESS_MARLI,    DATA_MARLI   },
+    { 0,                      0            }
 };
 
 class instance_zulgurub : public InstanceMapScript
 {
 public:
-    instance_zulgurub(): InstanceMapScript(ZGScriptName, 309) { }
+    instance_zulgurub(): InstanceMapScript(ZGScriptName, MAP_ZUL_GURUB) { }
 
     struct instance_zulgurub_InstanceMapScript : public InstanceScript
     {
         instance_zulgurub_InstanceMapScript(Map* map) : InstanceScript(map)
         {
+            SetHeaders(DataHeader);
             SetBossNumber(EncounterCount);
             LoadDoorData(doorData);
             LoadObjectData(creatureData, nullptr);
@@ -170,48 +167,6 @@ public:
             return true;
         }
 
-        std::string GetSaveData() override
-        {
-            OUT_SAVE_INST_DATA;
-
-            std::ostringstream saveStream;
-            saveStream << "Z G " << GetBossSaveData();
-
-            OUT_SAVE_INST_DATA_COMPLETE;
-            return saveStream.str();
-        }
-
-        void Load(const char* str) override
-        {
-            if (!str)
-            {
-                OUT_LOAD_INST_DATA_FAIL;
-                return;
-            }
-
-            OUT_LOAD_INST_DATA(str);
-
-            char dataHead1, dataHead2;
-
-            std::istringstream loadStream(str);
-            loadStream >> dataHead1 >> dataHead2;
-
-            if (dataHead1 == 'Z' && dataHead2 == 'G')
-            {
-                for (uint32 i = 0; i < EncounterCount; ++i)
-                {
-                    uint32 tmpState;
-                    loadStream >> tmpState;
-                    if (tmpState == IN_PROGRESS || tmpState > SPECIAL)
-                        tmpState = NOT_STARTED;
-                    SetBossState(i, EncounterState(tmpState));
-                }
-            }
-            else
-                OUT_LOAD_INST_DATA_FAIL;
-
-            OUT_LOAD_INST_DATA_COMPLETE;
-        }
     private:
         // If all High Priest bosses were killed. Ohgan is added too.
         // Jindo is needed for healfunction.

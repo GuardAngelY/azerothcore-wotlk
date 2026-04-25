@@ -1,14 +1,14 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
@@ -16,6 +16,7 @@
  */
 
 #include "BattlegroundMgr.h"
+#include "Chat.h"
 #include "GossipDef.h"
 #include "Language.h"
 #include "ObjectMgr.h"
@@ -43,13 +44,13 @@ void Player::PrepareGossipMenu(WorldObject* source, uint32 menuId /*= 0*/, bool 
 
     uint32 npcflags = 0;
 
-    if (source->GetTypeId() == TYPEID_UNIT)
+    if (source->IsCreature())
     {
         npcflags = source->ToUnit()->GetNpcFlags();
         if (showQuests && npcflags & UNIT_NPC_FLAG_QUESTGIVER)
             PrepareQuestMenu(source->GetGUID());
     }
-    else if (source->GetTypeId() == TYPEID_GAMEOBJECT)
+    else if (source->IsGameObject())
         if (showQuests && source->ToGameObject()->GetGoType() == GAMEOBJECT_TYPE_QUESTGIVER)
             PrepareQuestMenu(source->GetGUID());
 
@@ -89,15 +90,15 @@ void Player::PrepareGossipMenu(WorldObject* source, uint32 menuId /*= 0*/, bool 
                 }
                 case GOSSIP_OPTION_LEARNDUALSPEC:
                 case GOSSIP_OPTION_DUALSPEC_INFO:
-                    if (!(GetSpecsCount() == 1 && creature->isCanTrainingAndResetTalentsOf(this) && !(getLevel() < sWorld->getIntConfig(CONFIG_MIN_DUALSPEC_LEVEL))))
+                    if (!(GetSpecsCount() == 1 && creature->CanResetTalents(this) && !(GetLevel() < sWorld->getIntConfig(CONFIG_MIN_DUALSPEC_LEVEL))))
                         canTalk = false;
                     break;
                 case GOSSIP_OPTION_UNLEARNTALENTS:
-                    if (!creature->isCanTrainingAndResetTalentsOf(this))
+                    if (!creature->CanResetTalents(this))
                         canTalk = false;
                     break;
                 case GOSSIP_OPTION_UNLEARNPETTALENTS:
-                    if (!GetPet() || GetPet()->getPetType() != HUNTER_PET || GetPet()->m_spells.size() <= 1 || creature->GetCreatureTemplate()->trainer_type != TRAINER_TYPE_PETS || creature->GetCreatureTemplate()->trainer_class != CLASS_HUNTER)
+                    if (!GetPet() || GetPet()->getPetType() != HUNTER_PET || GetPet()->m_spells.size() <= 1 || !creature->CanResetTalents(this))
                         canTalk = false;
                     break;
                 case GOSSIP_OPTION_TAXIVENDOR:
@@ -109,18 +110,23 @@ void Player::PrepareGossipMenu(WorldObject* source, uint32 menuId /*= 0*/, bool 
                         canTalk = false;
                     break;
                 case GOSSIP_OPTION_STABLEPET:
-                    if (getClass() != CLASS_HUNTER)
+                    if (!IsClass(CLASS_HUNTER, CLASS_CONTEXT_PET))
                         canTalk = false;
                     break;
                 case GOSSIP_OPTION_QUESTGIVER:
                     canTalk = false;
                     break;
                 case GOSSIP_OPTION_TRAINER:
-                    if (!creature->IsValidTrainerForPlayer(this))
+                {
+                    Trainer::Trainer const* trainer = sObjectMgr->GetTrainer(creature->GetEntry());
+                    if (!trainer || !trainer->IsTrainerValidForPlayer(this))
                     {
+                        LOG_ERROR("sql.sql", "GOSSIP_OPTION_TRAINER:: Player {} (GUID: {}) requested wrong gossip menu: {} at Creature: {} (Entry: {})",
+                                    GetName(), GetGUID().GetCounter(), menu->GetGossipMenu().GetMenuId(), creature->GetName(), creature->GetEntry());
                         canTalk = false;
                     }
-                    break;
+                }
+                [[fallthrough]];
                 case GOSSIP_OPTION_GOSSIP:
                     if (creature->isVendorWithIconSpeak())
                     {
@@ -164,33 +170,31 @@ void Player::PrepareGossipMenu(WorldObject* source, uint32 menuId /*= 0*/, bool 
 
         if (canTalk)
         {
+            // using gossip_menu_option texts by default
+            std::string strOptionText = itr->second.OptionText;
+            std::string strBoxText = itr->second.BoxText;
             // search in broadcast_text and broadcast_text_locale
-            std::string strOptionText, strBoxText;
             BroadcastText const* optionBroadcastText = sObjectMgr->GetBroadcastText(itr->second.OptionBroadcastTextID);
             BroadcastText const* boxBroadcastText = sObjectMgr->GetBroadcastText(itr->second.BoxBroadcastTextID);
             LocaleConstant locale = GetSession()->GetSessionDbLocaleIndex();
 
             if (optionBroadcastText)
                 ObjectMgr::GetLocaleString(getGender() == GENDER_MALE ? optionBroadcastText->MaleText : optionBroadcastText->FemaleText, locale, strOptionText);
-            else
-                strOptionText = itr->second.OptionText;
 
             if (boxBroadcastText)
                 ObjectMgr::GetLocaleString(getGender() == GENDER_MALE ? boxBroadcastText->MaleText : boxBroadcastText->FemaleText, locale, strBoxText);
-            else
-                strBoxText = itr->second.BoxText;
 
             // if the language is not default and the texts weren't found, maybe they're in gossip_menu_option_locale table
             if (locale != DEFAULT_LOCALE)
             {
-                if (strOptionText.empty())
+                if (!optionBroadcastText)
                 {
                     /// Find localizations from database.
                     if (GossipMenuItemsLocale const* gossipMenuLocale = sObjectMgr->GetGossipMenuItemsLocale(MAKE_PAIR32(menuId, itr->second.OptionID)))
                         ObjectMgr::GetLocaleString(gossipMenuLocale->OptionText, locale, strOptionText);
                 }
 
-                if (strBoxText.empty())
+                if (!boxBroadcastText)
                 {
                     /// Find localizations from database.
                     if (GossipMenuItemsLocale const* gossipMenuLocale = sObjectMgr->GetGossipMenuItemsLocale(MAKE_PAIR32(menuId, itr->second.OptionID)))
@@ -212,7 +216,7 @@ void Player::SendPreparedGossip(WorldObject* source)
     if (!source)
         return;
 
-    if (source->GetTypeId() == TYPEID_UNIT)
+    if (source->IsCreature())
     {
         // in case no gossip flag and quest menu not empty, open quest menu (client expect gossip menu with this flag)
         if (!source->ToCreature()->HasNpcFlag(UNIT_NPC_FLAG_GOSSIP) && !PlayerTalkClass->GetQuestMenu().Empty())
@@ -221,7 +225,7 @@ void Player::SendPreparedGossip(WorldObject* source)
             return;
         }
     }
-    else if (source->GetTypeId() == TYPEID_GAMEOBJECT)
+    else if (source->IsGameObject())
     {
         // probably need to find a better way here
         if (!PlayerTalkClass->GetGossipMenu().GetMenuId() && !PlayerTalkClass->GetQuestMenu().Empty())
@@ -257,23 +261,23 @@ void Player::OnGossipSelect(WorldObject* source, uint32 gossipListId, uint32 men
     uint32 gossipOptionId = item->OptionType;
     ObjectGuid guid = source->GetGUID();
 
-    if (sWorld->getIntConfig(CONFIG_INSTANT_TAXI) == 2 && source->GetTypeId() == TYPEID_UNIT)
+    if (sWorld->getIntConfig(CONFIG_INSTANT_TAXI) == 2 && source->IsCreature())
     {
         if (gossipOptionId == GOSSIP_ACTION_TOGGLE_INSTANT_FLIGHT && source->ToUnit()->GetNpcFlags() & UNIT_NPC_FLAG_FLIGHTMASTER)
         {
             ToggleInstantFlight();
 
             if (m_isInstantFlightOn)
-                GetSession()->SendNotification(LANG_INSTANT_FLIGHT_ON);
+                ChatHandler(GetSession()).SendNotification(LANG_INSTANT_FLIGHT_ON);
             else
-                GetSession()->SendNotification(LANG_INSTANT_FLIGHT_OFF);
+                ChatHandler(GetSession()).SendNotification(LANG_INSTANT_FLIGHT_OFF);
 
             PlayerTalkClass->SendCloseGossip();
             return;
         }
     }
 
-    if (source->GetTypeId() == TYPEID_GAMEOBJECT)
+    if (source->IsGameObject())
     {
         if (gossipOptionId > GOSSIP_OPTION_QUESTGIVER)
         {
@@ -329,10 +333,10 @@ void Player::OnGossipSelect(WorldObject* source, uint32 gossipListId, uint32 men
             GetSession()->SendStablePet(guid);
             break;
         case GOSSIP_OPTION_TRAINER:
-            GetSession()->SendTrainerList(guid);
+            GetSession()->SendTrainerList(source->ToCreature());
             break;
         case GOSSIP_OPTION_LEARNDUALSPEC:
-            if (GetSpecsCount() == 1 && getLevel() >= sWorld->getIntConfig(CONFIG_MIN_DUALSPEC_LEVEL))
+            if (GetSpecsCount() == 1 && GetLevel() >= sWorld->getIntConfig(CONFIG_MIN_DUALSPEC_LEVEL))
             {
                 // Cast spells that teach dual spec
                 // Both are also ImplicitTarget self and must be cast by player
@@ -425,7 +429,7 @@ uint32 Player::GetDefaultGossipMenuForSource(WorldObject* source)
     switch (source->GetTypeId())
     {
         case TYPEID_UNIT:
-            return source->ToCreature()->GetCreatureTemplate()->GossipMenuId;
+            return source->ToCreature()->GetGossipMenuId();
         case TYPEID_GAMEOBJECT:
             return source->ToGameObject()->GetGOInfo()->GetGossipMenuId();
         default:

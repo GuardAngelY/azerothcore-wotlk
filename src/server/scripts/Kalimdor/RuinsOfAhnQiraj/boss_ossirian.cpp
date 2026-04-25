@@ -1,30 +1,31 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "CreatureScript.h"
 #include "GameObjectAI.h"
+#include "GameObjectScript.h"
 #include "MiscPackets.h"
-#include "Opcodes.h"
 #include "Player.h"
-#include "ScriptMgr.h"
 #include "ScriptedCreature.h"
 #include "SpellInfo.h"
 #include "SpellScript.h"
-#include "ruins_of_ahnqiraj.h"
+#include "SpellScriptLoader.h"
 #include "TaskScheduler.h"
+#include "ruins_of_ahnqiraj.h"
 
 enum Texts
 {
@@ -153,7 +154,7 @@ struct boss_ossirian : public BossAI
         }
     }
 
-    void SetGUID(ObjectGuid guid, int32 action) override
+    void SetGUID(ObjectGuid const& guid, int32 action) override
     {
         if (action == ACTION_TRIGGER_WEAKNESS && guid != _firstCrystalGUID)
         {
@@ -161,9 +162,9 @@ struct boss_ossirian : public BossAI
         }
     }
 
-    void EnterCombat(Unit* who) override
+    void JustEngagedWith(Unit* who) override
     {
-        BossAI::EnterCombat(who);
+        BossAI::JustEngagedWith(who);
         events.Reset();
         events.ScheduleEvent(EVENT_SPEEDUP, 10s);
         events.ScheduleEvent(EVENT_SILENCE, 30s);
@@ -187,7 +188,7 @@ struct boss_ossirian : public BossAI
         {
             if (Creature* vortex = me->SummonCreature(NPC_SAND_VORTEX, pos))
             {
-                vortex->GetMotionMaster()->MovePath(pathIds.front(), true);
+                vortex->GetMotionMaster()->MoveWaypoint(pathIds.front(), true);
                 pathIds.reverse();
             }
         }
@@ -316,7 +317,7 @@ public:
     {
         go_ossirian_crystalAI(GameObject* go) : GameObjectAI(go), _instance(go->GetInstanceScript()) { }
 
-        void SetGUID(ObjectGuid guid, int32 type) override
+        void SetGUID(ObjectGuid const& guid, int32 type) override
         {
             if (type == GUID_TRIGGER_PAIR)
             {
@@ -403,7 +404,7 @@ struct npc_anubisath_guardian : public ScriptedAI
         });
     }
 
-    void EnterCombat(Unit* /*who*/) override
+    void JustEngagedWith(Unit* /*who*/) override
     {
         DoCastSelf(_spells[0]);
         DoCastSelf(_spells[1]);

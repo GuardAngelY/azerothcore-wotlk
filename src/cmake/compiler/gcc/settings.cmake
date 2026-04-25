@@ -10,11 +10,6 @@
 # implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 #
 
-# Set build-directive (used in core to tell which buildtype we used)
-target_compile_definitions(acore-compile-option-interface
-  INTERFACE
-    -D_BUILD_DIRECTIVE="${CMAKE_BUILD_TYPE}")
-
 set(GCC_EXPECTED_VERSION 8.0.0)
 
 if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS GCC_EXPECTED_VERSION)
@@ -31,11 +26,14 @@ if(PLATFORM EQUAL 32)
       -mfpmath=sse)
 endif()
 
-target_compile_definitions(acore-compile-option-interface
-  INTERFACE
-    -DHAVE_SSE2
-    -D__SSE2__)
-message(STATUS "GCC: SFMT enabled, SSE2 flags forced")
+if(ACORE_SYSTEM_PROCESSOR MATCHES "x86|amd64")
+  target_compile_definitions(acore-compile-option-interface
+    INTERFACE
+      -DHAVE_SSE2
+      -D__SSE2__)
+
+  message(STATUS "GCC: SFMT enabled, SSE2 flags forced")
+endif()
 
 if( WITH_WARNINGS )
   target_compile_options(acore-warning-interface
@@ -67,7 +65,7 @@ if(BUILD_SHARED_LIBS)
     INTERFACE
       -fvisibility=hidden)
 
-  # Should break the build when there are WARHEAD_*_API macros missing
+  # Should break the build when there are ACORE_*_API macros missing
   # but it complains about missing references in precompiled headers.
   # set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wl,--no-undefined")
   # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wl,--no-undefined")

@@ -15,4 +15,59 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-//void AddSC_ironforge() { }
+#include "CreatureScript.h"
+#include "ScriptedCreature.h"
+
+// 2784 - King Magni Bronzebeard
+enum KingMagniBronzebeard
+{
+    SOUND_AGGRO      = 5896,
+    SPELL_AVATAR     = 19135,
+    SPELL_KNOCK_AWAY = 20686,
+    SPELL_STORM_BOLT = 20685
+};
+
+struct npc_king_magni_bronzebeard : public ScriptedAI
+{
+    npc_king_magni_bronzebeard(Creature* creature) : ScriptedAI(creature) { }
+
+    void JustEngagedWith(Unit* /*who*/) override
+    {
+        me->PlayDirectSound(SOUND_AGGRO);
+
+        ScheduleTimedEvent(5s, 7s, [&]
+        {
+            DoCastSelf(SPELL_AVATAR);
+        }, 25s, 30s);
+
+        ScheduleTimedEvent(8s, 10s, [&]
+        {
+            DoCastVictim(SPELL_KNOCK_AWAY);
+        }, 20s, 30s);
+
+        ScheduleTimedEvent(12s, 15s, [&]
+        {
+            DoCastRandomTarget(SPELL_STORM_BOLT);
+        }, 15s, 20s);
+    }
+
+    void JustDied(Unit* /*killer*/) override
+    {
+        DoRewardPlayersInArea();
+    }
+
+    void UpdateAI(uint32 diff) override
+    {
+        if (!UpdateVictim())
+            return;
+
+        scheduler.Update(diff,
+            std::bind(&ScriptedAI::DoMeleeAttackIfReady, this));
+    }
+
+};
+
+void AddSC_ironforge()
+{
+    RegisterCreatureAI(npc_king_magni_bronzebeard);
+}

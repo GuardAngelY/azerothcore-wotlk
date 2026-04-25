@@ -1,33 +1,26 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-/* ScriptData
-Name: learn_commandscript
-%Complete: 100
-Comment: All learn related commands
-Category: commandscripts
-EndScriptData */
-
+#include "CommandScript.h"
 #include "Language.h"
 #include "ObjectMgr.h"
 #include "Pet.h"
 #include "Player.h"
 #include "PlayerCommand.h"
-#include "ScriptMgr.h"
 #include "SpellInfo.h"
 #include "SpellMgr.h"
 
@@ -44,13 +37,14 @@ public:
         {
             { "class",      HandleLearnAllMyClassCommand,      SEC_GAMEMASTER, Console::No },
             { "pettalents", HandleLearnAllMyPetTalentsCommand, SEC_GAMEMASTER, Console::No },
-            { "spells",     HandleLearnAllMySpellsCommand,     SEC_GAMEMASTER, Console::No },
-            { "talents",    HandleLearnAllMyTalentsCommand,    SEC_GAMEMASTER, Console::No }
+            { "trainer",    HandleLearnAllMyTrainerSpellsCommand, SEC_GAMEMASTER, Console::No },
+            { "talents",    HandleLearnAllMyTalentsCommand,    SEC_GAMEMASTER, Console::No },
+            { "quest",      HandleLearnAllMyQuestSpells,       SEC_GAMEMASTER, Console::No }
         };
 
         static ChatCommandTable learnAllCommandTable =
         {
-            { "my", learnAllMyCommandTable },
+            { "my",        learnAllMyCommandTable },
             { "gm",        HandleLearnAllGMCommand,            SEC_GAMEMASTER, Console::No },
             { "crafts",    HandleLearnAllCraftsCommand,        SEC_GAMEMASTER, Console::No },
             { "default",   HandleLearnAllDefaultCommand,       SEC_GAMEMASTER, Console::No },
@@ -60,14 +54,14 @@ public:
 
         static ChatCommandTable learnCommandTable =
         {
-            { "all", learnAllCommandTable },
+            { "all",  learnAllCommandTable },
             { "",     HandleLearnCommand,                      SEC_GAMEMASTER, Console::No }
         };
 
         static ChatCommandTable commandTable =
         {
-            { "learn", learnCommandTable },
-            { "unlearn",     HandleUnLearnCommand,             SEC_GAMEMASTER, Console::No }
+            { "learn",   learnCommandTable },
+            { "unlearn", HandleUnLearnCommand,             SEC_GAMEMASTER, Console::No }
         };
         return commandTable;
     }
@@ -78,8 +72,7 @@ public:
 
         if (!targetPlayer)
         {
-            handler->SendSysMessage(LANG_PLAYER_NOT_FOUND);
-            handler->SetSentErrorMessage(true);
+            handler->SendErrorMessage(LANG_PLAYER_NOT_FOUND);
             return false;
         }
 
@@ -106,51 +99,56 @@ public:
 
     static bool HandleLearnAllMyClassCommand(ChatHandler* handler)
     {
-        HandleLearnAllMySpellsCommand(handler);
+        HandleLearnAllMyTrainerSpellsCommand(handler);
         HandleLearnAllMyTalentsCommand(handler);
+        HandleLearnAllMyQuestSpells(handler);
         return true;
     }
 
-    static bool HandleLearnAllMySpellsCommand(ChatHandler* handler)
+    static bool HandleLearnAllMyQuestSpells(ChatHandler* handler)
     {
-        ChrClassesEntry const* classEntry = sChrClassesStore.LookupEntry(handler->GetSession()->GetPlayer()->getClass());
-        if (!classEntry)
-            return true;
-        uint32 family = classEntry->spellfamily;
-
-        for (uint32 i = 0; i < sSkillLineAbilityStore.GetNumRows(); ++i)
+        Player* player = handler->GetPlayer();
+        for (auto const& questPair : sObjectMgr->GetQuestTemplates())
         {
-            SkillLineAbilityEntry const* entry = sSkillLineAbilityStore.LookupEntry(i);
-            if (!entry)
-                continue;
-
-            SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(entry->Spell);
-            if (!spellInfo)
-                continue;
-
-            // skip server-side/triggered spells
-            if (spellInfo->SpellLevel == 0)
-                continue;
-
-            // skip wrong class/race skills
-            if (!handler->GetSession()->GetPlayer()->IsSpellFitByClassAndRace(spellInfo->Id))
-                continue;
-
-            // skip other spell families
-            if (spellInfo->SpellFamilyName != family)
-                continue;
-
-            // skip spells with first rank learned as talent (and all talents then also)
-            uint32 firstRank = sSpellMgr->GetFirstSpellInChain(spellInfo->Id);
-            if (GetTalentSpellCost(firstRank) > 0)
-                continue;
-
-            // skip broken spells
-            if (!SpellMgr::IsSpellValid(spellInfo))
-                continue;
-
-            handler->GetSession()->GetPlayer()->learnSpell(spellInfo->Id);
+            Quest const* quest = questPair.second;
+            if (quest->GetRequiredClasses() && player->SatisfyQuestClass(quest, false))
+                player->learnQuestRewardedSpells(quest);
         }
+
+        return true;
+    }
+
+    static bool HandleLearnAllMyTrainerSpellsCommand(ChatHandler* handler)
+    {
+        if (!sChrClassesStore.LookupEntry(handler->GetSession()->GetPlayer()->getClass()))
+            return true;
+
+        Player* player = handler->GetPlayer();
+        std::vector<Trainer::Trainer const*> const& trainers = sObjectMgr->GetClassTrainers(player->getClass());
+
+        bool hadNew;
+        do
+        {
+            hadNew = false;
+            for (Trainer::Trainer const* trainer : trainers)
+            {
+                if (!trainer->IsTrainerValidForPlayer(player))
+                    continue;
+
+                for (Trainer::Spell const& trainerSpell : trainer->GetSpells())
+                {
+                    if (!trainer->CanTeachSpell(player, &trainerSpell))
+                        continue;
+
+                    if (trainerSpell.IsCastable())
+                        player->CastSpell(player, trainerSpell.SpellId, true);
+                    else
+                        player->learnSpell(trainerSpell.SpellId, false);
+
+                    hadNew = true;
+                }
+            }
+        } while (hadNew);
 
         handler->SendSysMessage(LANG_COMMAND_LEARN_CLASS_SPELLS);
         return true;
@@ -212,31 +210,27 @@ public:
         Pet* pet = player->GetPet();
         if (!pet)
         {
-            handler->SendSysMessage(LANG_NO_PET_FOUND);
-            handler->SetSentErrorMessage(true);
+            handler->SendErrorMessage(LANG_NO_PET_FOUND);
             return false;
         }
 
         CreatureTemplate const* creatureInfo = pet->GetCreatureTemplate();
         if (!creatureInfo)
         {
-            handler->SendSysMessage(LANG_WRONG_PET_TYPE);
-            handler->SetSentErrorMessage(true);
+            handler->SendErrorMessage(LANG_WRONG_PET_TYPE);
             return false;
         }
 
         CreatureFamilyEntry const* petFamily = sCreatureFamilyStore.LookupEntry(creatureInfo->family);
         if (!petFamily)
         {
-            handler->SendSysMessage(LANG_WRONG_PET_TYPE);
-            handler->SetSentErrorMessage(true);
+            handler->SendErrorMessage(LANG_WRONG_PET_TYPE);
             return false;
         }
 
         if (petFamily->petTalentType < 0)                       // not hunter pet
         {
-            handler->SendSysMessage(LANG_WRONG_PET_TYPE);
-            handler->SetSentErrorMessage(true);
+            handler->SendErrorMessage(LANG_WRONG_PET_TYPE);
             return false;
         }
 
@@ -285,9 +279,12 @@ public:
 
     static bool HandleLearnAllLangCommand(ChatHandler* handler)
     {
-        // skipping UNIVERSAL language (0)
-        for (uint8 i = 1; i < LANGUAGES_COUNT; ++i)
-            handler->GetSession()->GetPlayer()->learnSpell(lang_description[i].spell_id);
+        for (LanguageDesc const& langDesc : lang_description)
+            if (uint32 langSpellId = langDesc.spell_id)
+            {
+                handler->GetPlayer()->learnSpell(langSpellId);
+                handler->GetPlayer()->SetSkill(langDesc.skill_id, 0, 300, 300);
+            }
 
         handler->SendSysMessage(LANG_COMMAND_LEARN_ALL_LANG);
         return true;
@@ -305,7 +302,7 @@ public:
         target->LearnCustomSpells();
         target->learnQuestRewardedSpells();
 
-        handler->PSendSysMessage(LANG_COMMAND_LEARN_ALL_DEFAULT_AND_QUEST, handler->GetNameLink(target).c_str());
+        handler->PSendSysMessage(LANG_COMMAND_LEARN_ALL_DEFAULT_AND_QUEST, handler->GetNameLink(target));
         return true;
     }
 
@@ -392,16 +389,8 @@ public:
     {
         uint32 classmask = player->getClassMask();
 
-        for (uint32 j = 0; j < sSkillLineAbilityStore.GetNumRows(); ++j)
+        for (SkillLineAbilityEntry const* skillLine : GetSkillLineAbilitiesBySkillLine(skillId))
         {
-            SkillLineAbilityEntry const* skillLine = sSkillLineAbilityStore.LookupEntry(j);
-            if (!skillLine)
-                continue;
-
-            // wrong skill
-            if (skillLine->SkillLine != skillId)
-                continue;
-
             // not high rank
             if (skillLine->SupercededBySpell)
                 continue;
@@ -427,8 +416,7 @@ public:
         Player* target = handler->getSelectedPlayer();
         if (!target)
         {
-            handler->SendSysMessage(LANG_NO_CHAR_SELECTED);
-            handler->SetSentErrorMessage(true);
+            handler->SendErrorMessage(LANG_NO_CHAR_SELECTED);
             return false;
         }
 

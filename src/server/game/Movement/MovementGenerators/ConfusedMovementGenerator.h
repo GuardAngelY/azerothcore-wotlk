@@ -1,14 +1,14 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
@@ -27,7 +27,7 @@ template<class T>
 class ConfusedMovementGenerator : public MovementGeneratorMedium< T, ConfusedMovementGenerator<T> >
 {
 public:
-    explicit ConfusedMovementGenerator() : _nextMoveTime(1) {}
+    explicit ConfusedMovementGenerator() : i_nextMoveTime(1) {}
 
     void DoInitialize(T*);
     void DoFinalize(T*);
@@ -37,8 +37,8 @@ public:
     MovementGeneratorType GetMovementGeneratorType() { return CONFUSED_MOTION_TYPE; }
 private:
     void _InitSpecific(T*, bool&, bool&);
-    TimeTracker _nextMoveTime;
-    float _waypoints[MAX_CONF_WAYPOINTS + 1][3];
-    uint32 _nextMove;
+    TimeTracker i_nextMoveTime;
+    float i_waypoints[MAX_CONF_WAYPOINTS + 1][3];
+    uint32 i_nextMove;
 };
 #endif

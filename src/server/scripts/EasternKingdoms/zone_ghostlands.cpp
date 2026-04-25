@@ -1,26 +1,25 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "CreatureScript.h"
 #include "ObjectGuid.h"
 #include "Player.h"
-#include "ScriptMgr.h"
 #include "ScriptedCreature.h"
 #include "ScriptedEscortAI.h"
-#include "ScriptedGossip.h"
 
 /*######
 ## npc_ranger_lilatha
@@ -46,6 +45,7 @@ struct npc_ranger_lilatha : public npc_escortAI
 {
     npc_ranger_lilatha(Creature* creature) : npc_escortAI(creature) { }
 
+    using CreatureAI::WaypointReached;
     void WaypointReached(uint32 waypointId) override
     {
         Player* player = GetPlayerForEscort();
@@ -114,7 +114,8 @@ struct npc_ranger_lilatha : public npc_escortAI
         if (quest->GetQuestId() == QUEST_ESCAPE_FROM_THE_CATACOMBS)
         {
             me->SetFaction(FACTION_ESCORTEE_N_NEUTRAL_PASSIVE);
-            npc_escortAI::Start(true, false, player->GetGUID());
+            me->SetWalk(true);
+            Start(true, player->GetGUID());
         }
     }
 };
@@ -149,29 +150,29 @@ struct npc_sentinel_leader : public ScriptedAI
         {
             switch (id)
             {
-            case 1:
-            case 4:
-            case 7:
+            case 2:
+            case 5:
             case 8:
-            case 13:
+            case 9:
             case 14:
-            case 17:
+            case 15:
+            case 18:
                 Creature* SentinelSpy = me->FindNearestCreature(NPC_SENTINEL_SPY, 2.0f, true);
                 if (SentinelSpy)
                 {
                     me->HandleEmoteCommand(EMOTE_ONESHOT_SALUTE);
                     SentinelSpy->HandleEmoteCommand(EMOTE_ONESHOT_SALUTE);
-                    _events.ScheduleEvent(EVENT_QUESTION, 5000);
+                    _events.ScheduleEvent(EVENT_QUESTION, 5s);
                 }
                 break;
             }
         }
     }
 
-    void EnterCombat(Unit* /*who*/) override
+    void JustEngagedWith(Unit* /*who*/) override
     {
-        _events.ScheduleEvent(EVENT_SINISTER_STRIKE, urand(5000, 9000));
-        _events.ScheduleEvent(EVENT_BACKSTAB, urand(3000, 5000));
+        _events.ScheduleEvent(EVENT_SINISTER_STRIKE, 5s, 9s);
+        _events.ScheduleEvent(EVENT_BACKSTAB, 3s, 5s);
     }
 
     void UpdateAI(uint32 diff) override
@@ -187,7 +188,7 @@ struct npc_sentinel_leader : public ScriptedAI
                 case EVENT_QUESTION:
                 {
                     me->HandleEmoteCommand(EMOTE_ONESHOT_QUESTION);
-                    _events.ScheduleEvent(EVENT_TALK, 1000);
+                    _events.ScheduleEvent(EVENT_TALK, 1s);
                     break;
                 }
                 case EVENT_TALK:
@@ -212,11 +213,11 @@ struct npc_sentinel_leader : public ScriptedAI
             {
             case EVENT_SINISTER_STRIKE:
                 DoCastVictim(SPELL_SINISTER_STRIKE, true);
-                _events.ScheduleEvent(EVENT_SINISTER_STRIKE, urand(5000, 9000));
+                _events.ScheduleEvent(EVENT_SINISTER_STRIKE, 5s, 9s);
                 break;
             case EVENT_BACKSTAB:
                 DoCastVictim(SPELL_BACKSTAB, true);
-                _events.ScheduleEvent(EVENT_BACKSTAB, urand(7000, 11000));
+                _events.ScheduleEvent(EVENT_BACKSTAB, 7s, 11s);
                 break;
             default:
                 break;
@@ -282,16 +283,16 @@ struct npc_sentinel_infiltrator : public ScriptedAI
             case PATH_ONE:
                 switch (id)
                 {
-                    case 5:
-                    case 8:
-                    case 14:
-                    case 18:
+                    case 6:
+                    case 9:
+                    case 15:
+                    case 19:
                         Creature* SentinelInfiltrator = me->FindNearestCreature(NPC_SENTINEL_INFILTRATOR, 3.5f, true);
                         if (SentinelInfiltrator)
                         {
                             me->HandleEmoteCommand(EMOTE_ONESHOT_SALUTE);
                             SentinelInfiltrator->HandleEmoteCommand(EMOTE_ONESHOT_SALUTE);
-                            _events.ScheduleEvent(EVENT_TALK2, 2000);
+                            _events.ScheduleEvent(EVENT_TALK2, 2s);
                         }
                         break;
                 }
@@ -299,16 +300,16 @@ struct npc_sentinel_infiltrator : public ScriptedAI
             case PATH_TWO:
                 switch (id)
                 {
-                    case 5:
-                    case 7:
-                    case 14:
-                    case 17:
+                    case 6:
+                    case 8:
+                    case 15:
+                    case 18:
                         Creature* SentinelInfiltrator = me->FindNearestCreature(NPC_SENTINEL_INFILTRATOR, 3.5f, true);
                         if (SentinelInfiltrator)
                         {
                             me->HandleEmoteCommand(EMOTE_ONESHOT_SALUTE);
                             SentinelInfiltrator->HandleEmoteCommand(EMOTE_ONESHOT_SALUTE);
-                            _events.ScheduleEvent(EVENT_TALK, 2000);
+                            _events.ScheduleEvent(EVENT_TALK, 2s);
                         }
                         break;
                 }
@@ -317,10 +318,10 @@ struct npc_sentinel_infiltrator : public ScriptedAI
         }
     }
 
-    void EnterCombat(Unit* /*who*/) override
+    void JustEngagedWith(Unit* /*who*/) override
     {
-        _events.ScheduleEvent(EVENT_GOUGE2, urand(9000, 15000));
-        _events.ScheduleEvent(EVENT_BACKSTAB2, urand(3000, 5000));
+        _events.ScheduleEvent(EVENT_GOUGE2, 9s, 15s);
+        _events.ScheduleEvent(EVENT_BACKSTAB2, 3s, 5s);
     }
 
     void UpdateAI(uint32 diff) override
@@ -340,13 +341,13 @@ struct npc_sentinel_infiltrator : public ScriptedAI
                     {
                         SentinelInfiltrator->HandleEmoteCommand(EMOTE_ONESHOT_TALK);
                     }
-                    _events.ScheduleEvent(EVENT_QUESTION, 2000);
+                    _events.ScheduleEvent(EVENT_QUESTION, 2s);
                     break;
                 }
                 case EVENT_QUESTION2:
                 {
                     me->HandleEmoteCommand(EMOTE_ONESHOT_QUESTION);
-                    _events.ScheduleEvent(EVENT_EXCLAMATION, 1000);
+                    _events.ScheduleEvent(EVENT_EXCLAMATION, 1s);
                     break;
                 }
                 case EVENT_EXCLAMATION:
@@ -356,7 +357,7 @@ struct npc_sentinel_infiltrator : public ScriptedAI
                     {
                         SentinelInfiltrator->HandleEmoteCommand(EMOTE_ONESHOT_EXCLAMATION);
                     }
-                    _events.ScheduleEvent(EVENT_SALUTE, 3000);
+                    _events.ScheduleEvent(EVENT_SALUTE, 3s);
                     break;
                 }
                 case EVENT_SALUTE:
@@ -382,11 +383,11 @@ struct npc_sentinel_infiltrator : public ScriptedAI
             {
             case EVENT_GOUGE2:
                 DoCastVictim(SPELL_GOUGE, true);
-                _events.ScheduleEvent(EVENT_GOUGE2, urand(9000, 15000));
+                _events.ScheduleEvent(EVENT_GOUGE2, 9s, 15s);
                 break;
             case EVENT_BACKSTAB2:
                 DoCastVictim(SPELL_BACKSTAB, true);
-                _events.ScheduleEvent(EVENT_BACKSTAB, urand(7000, 11000));
+                _events.ScheduleEvent(EVENT_BACKSTAB, 7s, 11s);
                 break;
             default:
                 break;

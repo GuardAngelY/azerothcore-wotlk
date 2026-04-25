@@ -1,14 +1,14 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
@@ -25,19 +25,19 @@
 #include "ObjectAccessor.h"
 #include "Spell.h"
 #include "Util.h"
+#include "World.h"
 
 template<class T>
 RandomMovementGenerator<T>::~RandomMovementGenerator() { }
 
-template<>
-RandomMovementGenerator<Creature>::~RandomMovementGenerator()
-{
-    delete _pathGenerator;
-}
+template RandomMovementGenerator<Creature>::~RandomMovementGenerator();
 
 template<>
-void RandomMovementGenerator<Creature>::SetRandomLocation(Creature* creature)
+void RandomMovementGenerator<Creature>::_setRandomLocation(Creature* creature)
 {
+    if (!creature)
+        return;
+
     if (creature->_moveState != MAP_OBJECT_CELL_MOVE_NONE)
         return;
 
@@ -51,10 +51,24 @@ void RandomMovementGenerator<Creature>::SetRandomLocation(Creature* creature)
         creature->AddUnitState(UNIT_STATE_ROAMING_MOVE);
         Movement::MoveSplineInit init(creature);
         init.MoveTo(_currDestPosition.GetPositionX(), _currDestPosition.GetPositionY(), _currDestPosition.GetPositionZ());
-        init.SetWalk(true);
+
+        bool walk = true;
+        switch (creature->GetMovementTemplate().GetRandom())
+        {
+            case CreatureRandomMovementType::CanRun:
+                walk = creature->IsWalking();
+                break;
+            case CreatureRandomMovementType::AlwaysRun:
+                walk = false;
+                break;
+            default:
+                break;
+        }
+
+        init.SetWalk(walk);
         init.Launch();
-        if (creature->GetFormation() && creature->GetFormation()->GetLeader() == creature)
-            creature->GetFormation()->LeaderMoveTo(_currDestPosition.GetPositionX(), _currDestPosition.GetPositionY(), _currDestPosition.GetPositionZ(), false);
+        if (creature->GetFormation() && creature->GetFormation()->GetLeader() == creature && creature->GetFormation()->CanLeaderStartMoving())
+            creature->GetFormation()->LeaderStartedMoving();
         return;
     }
 
@@ -134,6 +148,11 @@ void RandomMovementGenerator<Creature>::SetRandomLocation(Creature* creature)
         }
         else // ground
         {
+            if (!_pathGenerator)
+                _pathGenerator = std::make_unique<PathGenerator>(creature);
+            else
+                _pathGenerator->Clear();
+
             bool result = _pathGenerator->CalculatePath(x, y, levelZ, false);
             if (result && !(_pathGenerator->GetPathType() & PATHFIND_NOPATH))
             {
@@ -192,7 +211,8 @@ void RandomMovementGenerator<Creature>::SetRandomLocation(Creature* creature)
     }
 
     _currentPoint = newPoint;
-    G3D::Vector3& finalPoint = finalPath[finalPath.size() - 1];
+    ASSERT(!finalPath.empty());
+    G3D::Vector3 finalPoint = finalPath.back();
     _currDestPosition.Relocate(finalPoint.x, finalPoint.y, finalPoint.z);
 
     creature->AddUnitState(UNIT_STATE_ROAMING_MOVE);
@@ -220,12 +240,13 @@ void RandomMovementGenerator<Creature>::SetRandomLocation(Creature* creature)
         _moveCount = 0;
         _nextMoveTime.Reset(urand(4000, 8000));
     }
-    if (sWorld->getBoolConfig(CONFIG_DONT_CACHE_RANDOM_MOVEMENT_PATHS))
-        _preComputedPaths.erase(pathIdx);
 
     //Call for creature group update
-    if (creature->GetFormation() && creature->GetFormation()->GetLeader() == creature)
-        creature->GetFormation()->LeaderMoveTo(finalPoint.x, finalPoint.y, finalPoint.z, false);
+    if (creature->GetFormation() && creature->GetFormation()->GetLeader() == creature && creature->GetFormation()->CanLeaderStartMoving())
+        creature->GetFormation()->LeaderStartedMoving();
+
+    if (sWorld->getBoolConfig(CONFIG_DONT_CACHE_RANDOM_MOVEMENT_PATHS))
+        _preComputedPaths.erase(pathIdx);
 }
 
 template<>
@@ -252,8 +273,6 @@ void RandomMovementGenerator<Creature>::DoInitialize(Creature* creature)
         }
     }
 
-    if (!_pathGenerator)
-        _pathGenerator = new PathGenerator(creature);
     creature->AddUnitState(UNIT_STATE_ROAMING | UNIT_STATE_ROAMING_MOVE);
 }
 
@@ -267,7 +286,6 @@ template<>
 void RandomMovementGenerator<Creature>::DoFinalize(Creature* creature)
 {
     creature->ClearUnitState(UNIT_STATE_ROAMING | UNIT_STATE_ROAMING_MOVE);
-    creature->SetWalk(false);
 }
 
 template<>
@@ -292,7 +310,7 @@ bool RandomMovementGenerator<Creature>::DoUpdate(Creature* creature, const uint3
     {
         _nextMoveTime.Update(diff);
         if (_nextMoveTime.Passed())
-            SetRandomLocation(creature);
+            _setRandomLocation(creature);
     }
     return true;
 }

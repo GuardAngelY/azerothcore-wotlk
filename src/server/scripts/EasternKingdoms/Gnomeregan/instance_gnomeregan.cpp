@@ -1,31 +1,33 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "CreatureScript.h"
+#include "InstanceMapScript.h"
 #include "InstanceScript.h"
 #include "PassiveAI.h"
 #include "Player.h"
-#include "ScriptMgr.h"
 #include "SpellScript.h"
+#include "SpellScriptLoader.h"
 #include "gnomeregan.h"
 
 class instance_gnomeregan : public InstanceMapScript
 {
 public:
-    instance_gnomeregan() : InstanceMapScript("instance_gnomeregan", 90) { }
+    instance_gnomeregan() : InstanceMapScript("instance_gnomeregan", MAP_GNOMEREGAN) { }
 
     InstanceScript* GetInstanceScript(InstanceMap* map) const override
     {
@@ -36,6 +38,7 @@ public:
     {
         instance_gnomeregan_InstanceMapScript(Map* map) : InstanceScript(map)
         {
+            SetHeaders(DataHeader);
         }
 
         void OnCreatureCreate(Creature* creature) override
@@ -59,7 +62,7 @@ public:
                 case GO_CAVE_IN_2:
                 case GO_WORKSHOP_DOOR:
                 case GO_FINAL_CHAMBER_DOOR:
-                    gameobject->UpdateSaveToDb(true);
+                    gameobject->AllowSaveToDB(true);
                     break;
             }
         }
@@ -77,30 +80,14 @@ public:
                 SaveToDB();
         }
 
-        std::string GetSaveData() override
+        void ReadSaveDataMore(std::istringstream& data) override
         {
-            std::ostringstream saveStream;
-            saveStream << "D E " << _encounters[0];
-            return saveStream.str();
+            data >> _encounters[TYPE_GRUBBIS];
         }
 
-        void Load(const char* in) override
+        void WriteSaveDataMore(std::ostringstream& data) override
         {
-            if (!in)
-                return;
-
-            char dataHead1, dataHead2;
-            std::istringstream loadStream(in);
-            loadStream >> dataHead1 >> dataHead2;
-            if (dataHead1 == 'D' && dataHead2 == 'E')
-            {
-                for (uint8 i = 0; i < MAX_ENCOUNTERS; ++i)
-                {
-                    loadStream >> _encounters[i];
-                    if (_encounters[i] == IN_PROGRESS)
-                        _encounters[i] = NOT_STARTED;
-                }
-            }
+            data << _encounters[TYPE_GRUBBIS];
         }
 
     private:
@@ -144,7 +131,7 @@ public:
         uint32 checkTimer;
         ObjectGuid playerGUID;
 
-        void SetGUID(ObjectGuid guid, int32) override
+        void SetGUID(ObjectGuid const& guid, int32) override
         {
             playerGUID = guid;
         }
@@ -159,37 +146,26 @@ public:
                 {
                     if (Player* player = ObjectAccessor::GetPlayer(*me, playerGUID))
                         player->GroupEventHappens(QUEST_A_FINE_MESS, me);
-                    me->DespawnOrUnsummon(1000);
+                    me->DespawnOrUnsummon(1s);
                 }
             }
         }
     };
 };
 
-class spell_gnomeregan_radiation_bolt : public SpellScriptLoader
+class spell_gnomeregan_radiation_bolt : public SpellScript
 {
-public:
-    spell_gnomeregan_radiation_bolt() : SpellScriptLoader("spell_gnomeregan_radiation_bolt") { }
+    PrepareSpellScript(spell_gnomeregan_radiation_bolt);
 
-    class spell_gnomeregan_radiation_bolt_SpellScript : public SpellScript
+    void HandleTriggerSpell(SpellEffIndex effIndex)
     {
-        PrepareSpellScript(spell_gnomeregan_radiation_bolt_SpellScript);
+        if (roll_chance_i(80))
+            PreventHitDefaultEffect(effIndex);
+    }
 
-        void HandleTriggerSpell(SpellEffIndex effIndex)
-        {
-            if (roll_chance_i(80))
-                PreventHitDefaultEffect(effIndex);
-        }
-
-        void Register() override
-        {
-            OnEffectHit += SpellEffectFn(spell_gnomeregan_radiation_bolt_SpellScript::HandleTriggerSpell, EFFECT_1, SPELL_EFFECT_TRIGGER_SPELL);
-        }
-    };
-
-    SpellScript* GetSpellScript() const override
+    void Register() override
     {
-        return new spell_gnomeregan_radiation_bolt_SpellScript;
+        OnEffectHit += SpellEffectFn(spell_gnomeregan_radiation_bolt::HandleTriggerSpell, EFFECT_1, SPELL_EFFECT_TRIGGER_SPELL);
     }
 };
 
@@ -197,5 +173,5 @@ void AddSC_instance_gnomeregan()
 {
     new instance_gnomeregan();
     new npc_kernobee();
-    new spell_gnomeregan_radiation_bolt();
+    RegisterSpellScript(spell_gnomeregan_radiation_bolt);
 }

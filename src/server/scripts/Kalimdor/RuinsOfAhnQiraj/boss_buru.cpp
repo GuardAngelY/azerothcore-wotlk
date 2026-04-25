@@ -1,24 +1,24 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "ScriptMgr.h"
+#include "CreatureScript.h"
 #include "ScriptedCreature.h"
 #include "SpellScript.h"
-#include "TaskScheduler.h"
+#include "SpellScriptLoader.h"
 #include "ruins_of_ahnqiraj.h"
 
 enum Emotes
@@ -78,9 +78,9 @@ struct boss_buru : public BossAI
             respawn ? egg->Respawn() : Unit::Kill(me, egg);
     }
 
-    void EnterCombat(Unit* who) override
+    void JustEngagedWith(Unit* who) override
     {
-        BossAI::EnterCombat(who);
+        BossAI::JustEngagedWith(who);
         me->AddThreat(who, 1000000.f);
         Talk(EMOTE_TARGET, who);
         DoCastSelf(SPELL_THORNS);
@@ -106,7 +106,7 @@ struct boss_buru : public BossAI
 
     void KilledUnit(Unit* victim) override
     {
-        if (victim->GetTypeId() == TYPEID_PLAYER)
+        if (victim->IsPlayer())
             ChaseNewVictim();
     }
 
@@ -188,12 +188,12 @@ struct npc_buru_egg : public ScriptedAI
     npc_buru_egg(Creature* creature) : ScriptedAI(creature)
     {
         _instance = me->GetInstanceScript();
-        SetCombatMovement(false);
+        me->SetCombatMovement(false);
         me->SetReactState(REACT_PASSIVE);
         me->SetControlled(true, UNIT_STATE_STUNNED);
     }
 
-    void EnterCombat(Unit* attacker) override
+    void JustEngagedWith(Unit* attacker) override
     {
         if (Creature* buru = _instance->GetCreature(DATA_BURU))
         {
@@ -231,7 +231,7 @@ struct npc_buru_egg : public ScriptedAI
             }
         }
 
-        me->DespawnOrUnsummon(5000);
+        me->DespawnOrUnsummon(5s);
     }
 
     void UpdateAI(uint32 /*diff*/) override { }

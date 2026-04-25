@@ -1,23 +1,24 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "ScriptMgr.h"
+#include "CreatureScript.h"
 #include "ScriptedCreature.h"
 #include "SpellScript.h"
+#include "SpellScriptLoader.h"
 #include "zulgurub.h"
 
 enum Spells
@@ -69,9 +70,9 @@ struct boss_hazzarah : public BossAI
         summon->DespawnOrUnsummon();
     }
 
-    void EnterCombat(Unit* /*who*/) override
+    void JustEngagedWith(Unit* /*who*/) override
     {
-        _EnterCombat();
+        _JustEngagedWith();
         events.ScheduleEvent(EVENT_SLEEP, 12s, 15s);
         events.ScheduleEvent(EVENT_EARTH_SHOCK, 8s, 18s);
         events.ScheduleEvent(EVENT_CHAIN_BURN, 12s, 28s);
@@ -82,14 +83,14 @@ struct boss_hazzarah : public BossAI
     {
         if (me->GetThreatMgr().GetThreatListSize() > 1)
         {
-            ThreatContainer::StorageType::const_iterator lastRef = me->GetThreatMgr().GetOnlineContainer().GetThreatList().end();
-            --lastRef;
-            if (Unit* lastTarget = (*lastRef)->getTarget())
+            // Check if target is the lowest threat (last in sorted list)
+            ThreatReference const* lowestRef = nullptr;
+            for (ThreatReference const* ref : me->GetThreatMgr().GetSortedThreatList())
+                lowestRef = ref; // Last iteration will have the lowest threat target
+
+            if (lowestRef && lowestRef->GetVictim() != target)
             {
-                if (lastTarget != target)
-                {
-                    return !target->HasAura(SPELL_SLEEP);
-                }
+                return !target->HasAura(SPELL_SLEEP);
             }
         }
 
@@ -121,7 +122,7 @@ struct boss_hazzarah : public BossAI
                 case EVENT_CHAIN_BURN:
                     if (me->GetPowerPct(POWER_MANA) > 5.f) // totally guessed
                     {
-                        if (Unit* target = SelectTarget(SelectTargetMethod::Random, 1, [&](Unit* u) { return u && !u->IsPet() && u->getPowerType() == POWER_MANA; }))
+                        if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, [&](Unit* u) { return u && !u->IsPet() && u->getPowerType() == POWER_MANA && u != me->GetVictim(); }))
                         {
                             DoCast(target, SPELL_CHAIN_BURN);
                         }

@@ -1,28 +1,31 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "AreaDefines.h"
 #include "ArenaTeam.h"
 #include "ArenaTeamMgr.h"
+#include "ArenaSeasonMgr.h"
 #include "Battleground.h"
 #include "BattlegroundMgr.h"
 #include "Chat.h"
 #include "DisableMgr.h"
 #include "GameTime.h"
 #include "Group.h"
+#include "LFGMgr.h"
 #include "Language.h"
 #include "ObjectAccessor.h"
 #include "Opcodes.h"
@@ -44,9 +47,7 @@ void WorldSession::HandleBattlemasterHelloOpcode(WorldPacket& recvData)
     if (!unit->IsBattleMaster())                             // it's not battlemaster
         return;
 
-    // Stop the npc if moving
-    if (uint32 pause = unit->GetMovementTemplate().GetInteractionPauseTimer())
-        unit->PauseMovement(pause);
+    unit->PauseMovementForInteraction();
     unit->SetHomePosition(unit->GetPosition());
 
     BattlegroundTypeId bgTypeId = sBattlegroundMgr->GetBattleMasterBG(unit->GetEntry());
@@ -54,7 +55,7 @@ void WorldSession::HandleBattlemasterHelloOpcode(WorldPacket& recvData)
     if (!_player->GetBGAccessByLevel(bgTypeId))
     {
         // temp, must be gossip message...
-        SendNotification(LANG_YOUR_BG_LEVEL_REQ_ERROR);
+        ChatHandler(this).SendNotification(LANG_YOUR_BG_LEVEL_REQ_ERROR);
         return;
     }
 
@@ -89,7 +90,7 @@ void WorldSession::HandleBattlemasterJoinOpcode(WorldPacket& recvData)
     }
 
     // chosen battleground type is disabled
-    if (DisableMgr::IsDisabledFor(DISABLE_TYPE_BATTLEGROUND, bgTypeId_, nullptr))
+    if (sDisableMgr->IsDisabledFor(DISABLE_TYPE_BATTLEGROUND, bgTypeId_, nullptr))
     {
         ChatHandler(this).PSendSysMessage(LANG_BG_DISABLED);
         return;
@@ -122,7 +123,7 @@ void WorldSession::HandleBattlemasterJoinOpcode(WorldPacket& recvData)
         return;
 
     // expected bracket entry
-    PvPDifficultyEntry const* bracketEntry = GetBattlegroundBracketByLevel(bg->GetMapId(), _player->getLevel());
+    PvPDifficultyEntry const* bracketEntry = GetBattlegroundBracketByLevel(bg->GetMapId(), _player->GetLevel());
     if (!bracketEntry)
         return;
 
@@ -138,7 +139,7 @@ void WorldSession::HandleBattlemasterJoinOpcode(WorldPacket& recvData)
     // queue result (default ok)
     GroupJoinBattlegroundResult err = GroupJoinBattlegroundResult(bg->GetBgTypeID());
 
-    if (!sScriptMgr->CanJoinInBattlegroundQueue(_player, guid, bgTypeId, joinAsGroup, err) && err <= 0)
+    if (!sScriptMgr->OnPlayerCanJoinInBattlegroundQueue(_player, guid, bgTypeId, joinAsGroup, err) && err <= 0)
     {
         WorldPacket data;
         sBattlegroundMgr->BuildGroupJoinedBattlegroundPacket(&data, err);
@@ -183,7 +184,7 @@ void WorldSession::HandleBattlemasterJoinOpcode(WorldPacket& recvData)
             err = ERR_BATTLEGROUND_QUEUED_FOR_RATED;
         }
         // don't let Death Knights join BG queues when they are not allowed to be teleported yet
-        else if (_player->getClass() == CLASS_DEATH_KNIGHT && _player->GetMapId() == 609 && !_player->IsGameMaster() && !_player->HasSpell(50977))
+        else if (_player->IsClass(CLASS_DEATH_KNIGHT, CLASS_CONTEXT_TELEPORT) && _player->GetMapId() == MAP_EBON_HOLD && !_player->IsGameMaster() && !_player->HasSpell(50977))
         {
             err = ERR_BATTLEGROUND_NONE;
         }
@@ -262,7 +263,7 @@ void WorldSession::HandleBattlemasterJoinOpcode(WorldPacket& recvData)
             {
                 WorldPacket data;
                 sBattlegroundMgr->BuildGroupJoinedBattlegroundPacket(&data, err);
-                member->GetSession()->SendPacket(&data);
+                member->SendDirectMessage(&data);
             });
 
             return;
@@ -280,10 +281,10 @@ void WorldSession::HandleBattlemasterJoinOpcode(WorldPacket& recvData)
 
             // send status packet
             sBattlegroundMgr->BuildBattlegroundStatusPacket(&data, bg, member->AddBattlegroundQueueId(bgQueueTypeId), STATUS_WAIT_QUEUE, avgWaitTime, 0, 0, TEAM_NEUTRAL);
-            member->GetSession()->SendPacket(&data);
+            member->SendDirectMessage(&data);
 
             sBattlegroundMgr->BuildGroupJoinedBattlegroundPacket(&data, err);
-            member->GetSession()->SendPacket(&data);
+            member->SendDirectMessage(&data);
 
             sScriptMgr->OnPlayerJoinBG(member);
         });
@@ -413,7 +414,7 @@ void WorldSession::HandleBattleFieldPortOpcode(WorldPacket& recvData)
 
     if (_player->GetCharmGUID() || _player->IsInCombat())
     {
-        _player->GetSession()->SendNotification(LANG_YOU_IN_COMBAT);
+        ChatHandler(_player->GetSession()).SendNotification(LANG_YOU_IN_COMBAT);
         return;
     }
 
@@ -422,7 +423,7 @@ void WorldSession::HandleBattleFieldPortOpcode(WorldPacket& recvData)
     BattlegroundQueueTypeId bgQueueTypeId = BattlegroundMgr::BGQueueTypeId(bgTypeId, arenaType);
     BattlegroundQueue& bgQueue = sBattlegroundMgr->GetBattlegroundQueue(bgQueueTypeId);
 
-    if (!sScriptMgr->CanBattleFieldPort(_player, arenaType, bgTypeId, action))
+    if (!sScriptMgr->OnPlayerCanBattleFieldPort(_player, arenaType, bgTypeId, action))
         return;
 
     // get group info from queue
@@ -464,7 +465,7 @@ void WorldSession::HandleBattleFieldPortOpcode(WorldPacket& recvData)
         GetPlayerInfo(), arenaType, unk2, bgTypeId_, action);
 
     // expected bracket entry
-    PvPDifficultyEntry const* bracketEntry = GetBattlegroundBracketByLevel(bg->GetMapId(), _player->getLevel());
+    PvPDifficultyEntry const* bracketEntry = GetBattlegroundBracketByLevel(bg->GetMapId(), _player->GetLevel());
     if (!bracketEntry)
         return;
 
@@ -481,10 +482,10 @@ void WorldSession::HandleBattleFieldPortOpcode(WorldPacket& recvData)
             LOG_DEBUG("bg.battleground", "Player {} {} has a deserter debuff, do not port him to battleground!", _player->GetName(), _player->GetGUID().ToString());
         }
 
-        if (_player->getLevel() > bg->GetMaxLevel())
+        if (_player->GetLevel() > bg->GetMaxLevel())
         {
             LOG_ERROR("network", "Player {} {} has level ({}) higher than maxlevel ({}) of battleground ({})! Do not port him to battleground!",
-                _player->GetName(), _player->GetGUID().ToString(), _player->getLevel(), bg->GetMaxLevel(), bg->GetBgTypeID());
+                _player->GetName(), _player->GetGUID().ToString(), _player->GetLevel(), bg->GetMaxLevel(), bg->GetBgTypeID());
             action = 0;
         }
     }
@@ -577,8 +578,11 @@ void WorldSession::HandleBattleFieldPortOpcode(WorldPacket& recvData)
                 CharacterDatabase.Execute(stmt);
             }
 
-            sScriptMgr->OnBattlegroundDesertion(_player, BG_DESERTION_TYPE_LEAVE_QUEUE);
+            sScriptMgr->OnPlayerBattlegroundDesertion(_player, BG_DESERTION_TYPE_LEAVE_QUEUE);
         }
+
+        if (bg->isArena() && (bg->GetStatus() == STATUS_IN_PROGRESS || bg->GetStatus() == STATUS_WAIT_JOIN))
+            sScriptMgr->OnPlayerBattlegroundDesertion(_player, ARENA_DESERTION_TYPE_LEAVE_QUEUE);
     }
 }
 
@@ -650,7 +654,7 @@ void WorldSession::HandleBattlefieldStatusOpcode(WorldPacket& /*recvData*/)
                 continue;
 
             // expected bracket entry
-            PvPDifficultyEntry const* bracketEntry = GetBattlegroundBracketByLevel(bgt->GetMapId(), _player->getLevel());
+            PvPDifficultyEntry const* bracketEntry = GetBattlegroundBracketByLevel(bgt->GetMapId(), _player->GetLevel());
             if (!bracketEntry)
                 continue;
 
@@ -717,7 +721,7 @@ void WorldSession::HandleBattlemasterJoinArena(WorldPacket& recvData)
     }
 
     // arenas disabled
-    if (DisableMgr::IsDisabledFor(DISABLE_TYPE_BATTLEGROUND, BATTLEGROUND_AA, nullptr))
+    if (sDisableMgr->IsDisabledFor(DISABLE_TYPE_BATTLEGROUND, BATTLEGROUND_AA, nullptr))
     {
         ChatHandler(this).PSendSysMessage(LANG_ARENA_DISABLED);
         return;
@@ -726,7 +730,7 @@ void WorldSession::HandleBattlemasterJoinArena(WorldPacket& recvData)
     BattlegroundTypeId bgTypeId = bgt->GetBgTypeID();
 
     // expected bracket entry
-    PvPDifficultyEntry const* bracketEntry = GetBattlegroundBracketByLevel(bgt->GetMapId(), _player->getLevel());
+    PvPDifficultyEntry const* bracketEntry = GetBattlegroundBracketByLevel(bgt->GetMapId(), _player->GetLevel());
     if (!bracketEntry)
         return;
 
@@ -743,7 +747,7 @@ void WorldSession::HandleBattlemasterJoinArena(WorldPacket& recvData)
     // queue result (default ok)
     GroupJoinBattlegroundResult err = GroupJoinBattlegroundResult(bgt->GetBgTypeID());
 
-    if (!sScriptMgr->CanJoinInArenaQueue(_player, guid, arenaslot, bgTypeId, asGroup, isRated, err) && err <= 0)
+    if (!sScriptMgr->OnPlayerCanJoinInArenaQueue(_player, guid, arenaslot, bgTypeId, asGroup, isRated, err) && err <= 0)
     {
         WorldPacket data;
         sBattlegroundMgr->BuildGroupJoinedBattlegroundPacket(&data, err);
@@ -808,7 +812,7 @@ void WorldSession::HandleBattlemasterJoinArena(WorldPacket& recvData)
         if (isRated)
         {
             // pussywizard: for rated matches check if season is in progress!
-            if (!sWorld->getBoolConfig(CONFIG_ARENA_SEASON_IN_PROGRESS))
+            if (sArenaSeasonMgr->GetSeasonState() == ARENA_SEASON_STATE_DISABLED)
                 return;
 
             ateamId = _player->GetArenaTeamId(arenaslot);
@@ -873,7 +877,7 @@ void WorldSession::HandleBattlemasterJoinArena(WorldPacket& recvData)
             if (err <= 0)
             {
                 sBattlegroundMgr->BuildGroupJoinedBattlegroundPacket(&data, err);
-                member->GetSession()->SendPacket(&data);
+                member->SendDirectMessage(&data);
                 continue;
             }
 
@@ -881,10 +885,10 @@ void WorldSession::HandleBattlemasterJoinArena(WorldPacket& recvData)
 
             // send status packet
             sBattlegroundMgr->BuildBattlegroundStatusPacket(&data, bgt, queueSlot, STATUS_WAIT_QUEUE, avgWaitTime, 0, arenatype, TEAM_NEUTRAL, isRated);
-            member->GetSession()->SendPacket(&data);
+            member->SendDirectMessage(&data);
 
             sBattlegroundMgr->BuildGroupJoinedBattlegroundPacket(&data, err);
-            member->GetSession()->SendPacket(&data);
+            member->SendDirectMessage(&data);
 
             LOG_DEBUG("bg.battleground", "Battleground: player joined queue for arena as group bg queue type {} bg type {}: {}, NAME {}", bgQueueTypeId, bgTypeId, member->GetGUID().ToString(), member->GetName());
 

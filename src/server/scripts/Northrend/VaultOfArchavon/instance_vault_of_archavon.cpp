@@ -1,14 +1,14 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
@@ -18,8 +18,8 @@
 #include "Battlefield.h"
 #include "BattlefieldMgr.h"
 #include "GameTime.h"
+#include "InstanceMapScript.h"
 #include "Player.h"
-#include "ScriptMgr.h"
 #include "ScriptedCreature.h"
 #include "SpellAuras.h"
 #include "vault_of_archavon.h"
@@ -34,7 +34,7 @@
 class instance_vault_of_archavon : public InstanceMapScript
 {
 public:
-    instance_vault_of_archavon() : InstanceMapScript("instance_vault_of_archavon", 624) { }
+    instance_vault_of_archavon() : InstanceMapScript("instance_vault_of_archavon", MAP_VAULT_OF_ARCHAVON) { }
 
     struct instance_vault_of_archavon_InstanceMapScript : public InstanceScript
     {
@@ -44,6 +44,7 @@ public:
 
         void Initialize() override
         {
+            SetHeaders(DataHeader);
             memset(&m_auiEncounter, 0, sizeof(m_auiEncounter));
 
             ArchavonDeath = 0;
@@ -119,7 +120,7 @@ public:
                             if (!PlayerList.IsEmpty())
                                 for (Map::PlayerList::const_iterator i = PlayerList.begin(); i != PlayerList.end(); ++i)
                                     if (Player* player = i->GetSource())
-                                        player->TeleportTo(player->m_homebindMapId, player->m_homebindX, player->m_homebindY, player->m_homebindZ, player->m_homebindO);
+                                        player->TeleportTo(player->m_homebindMapId, player->m_homebindX, player->m_homebindY, player->m_homebindZ, player->GetOrientation());
                         }
                     }
                 }
@@ -175,7 +176,7 @@ public:
 
         void SetData(uint32 type, uint32 data) override
         {
-            switch(type)
+            switch (type)
             {
                 case EVENT_ARCHAVON:
                 case EVENT_EMALON:
@@ -230,44 +231,20 @@ public:
             return false;
         }
 
-        std::string GetSaveData() override
+        void ReadSaveDataMore(std::istringstream& data) override
         {
-            OUT_SAVE_INST_DATA;
-
-            std::ostringstream saveStream;
-            saveStream << "V O A " << m_auiEncounter[0] << ' ' << m_auiEncounter[1] << ' ' << m_auiEncounter[2] << ' ' << m_auiEncounter[3];
-
-            OUT_SAVE_INST_DATA_COMPLETE;
-            return saveStream.str();
+            data >> m_auiEncounter[0];
+            data >> m_auiEncounter[1];
+            data >> m_auiEncounter[2];
+            data >> m_auiEncounter[3];
         }
 
-        void Load(const char* in) override
+        void WriteSaveDataMore(std::ostringstream& data) override
         {
-            if (!in)
-            {
-                OUT_LOAD_INST_DATA_FAIL;
-                return;
-            }
-
-            OUT_LOAD_INST_DATA(in);
-
-            char dataHead1, dataHead2, dataHead3;
-            std::istringstream loadStream(in);
-            loadStream >> dataHead1 >> dataHead2 >> dataHead3;
-
-            if (dataHead1 == 'V' && dataHead2 == 'O' && dataHead3 == 'A')
-            {
-                for (uint8 i = 0; i < MAX_ENCOUNTER; ++i)
-                {
-                    loadStream >> m_auiEncounter[i];
-                    if (m_auiEncounter[i] == IN_PROGRESS)
-                        m_auiEncounter[i] = NOT_STARTED;
-                }
-
-                OUT_LOAD_INST_DATA_COMPLETE;
-            }
-            else
-                OUT_LOAD_INST_DATA_FAIL;
+            data << m_auiEncounter[0] << ' '
+                << m_auiEncounter[1] << ' '
+                << m_auiEncounter[2] << ' '
+                << m_auiEncounter[3];
         }
 
     private:

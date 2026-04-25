@@ -1,31 +1,32 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "ScriptMgr.h"
-#include "ScriptedCreature.h"
-#include "ScriptedGossip.h"
+#include "CreatureScript.h"
+#include "GridNotifiersImpl.h"
+#include "Group.h"
 #include "LFGMgr.h"
 #include "Player.h"
-#include "Group.h"
-#include "SpellScript.h"
+#include "ScriptedCreature.h"
+#include "ScriptedGossip.h"
 #include "SpellAuraEffects.h"
-#include "shadowfang_keep.h"
-#include "GridNotifiersImpl.h"
+#include "SpellScript.h"
+#include "SpellScriptLoader.h"
 #include "TaskScheduler.h"
+#include "shadowfang_keep.h"
 
 enum ApothecarySpells
 {
@@ -86,12 +87,7 @@ public:
     struct boss_apothecary_hummelAI : public BossAI
     {
         boss_apothecary_hummelAI(Creature* creature) : BossAI(creature, DATA_APOTHECARY_HUMMEL), _deadCount(0), _isDead(false)
-        {
-            _scheduler.SetValidator([this]
-            {
-                return !me->HasUnitState(UNIT_STATE_CASTING);
-            });
-        }
+        {        }
 
         void sGossipSelect(Player* player, uint32 menuId, uint32 gossipListId) override
         {
@@ -109,15 +105,10 @@ public:
             _deadCount = 0;
             _isDead = false;
             _phase = PHASE_ALL;
-            summons.DespawnAll();
             me->SetFaction(FACTION_FRIENDLY);
             me->SummonCreatureGroup(1);
             me->SetNpcFlag(UNIT_NPC_FLAG_GOSSIP);
-        }
-
-        void JustSummoned(Creature* summon) override
-        {
-            summons.Summon(summon);
+            me->RemoveUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
         }
 
         void DoAction(int32 action) override
@@ -125,7 +116,7 @@ public:
             if (action == ACTION_START_EVENT && _phase == PHASE_ALL)
             {
                 _phase = PHASE_INTRO;
-                _scheduler.Schedule(1ms, [this](TaskContext /*context*/)
+                scheduler.Schedule(1ms, [this](TaskContext /*context*/)
                 {
                     Talk(SAY_INTRO_0);
                 })
@@ -230,9 +221,8 @@ public:
                 Talk(SAY_HUMMEL_DEATH);
             }
 
-            _scheduler.CancelAll();
+            _JustDied();
             me->RemoveUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
-            instance->SetBossState(DATA_APOTHECARY_HUMMEL, DONE);
 
             Map::PlayerList const& players = me->GetMap()->GetPlayers();
             if (!players.IsEmpty())
@@ -254,7 +244,7 @@ public:
                 return;
             }
 
-            _scheduler.Update(diff, [this]
+            scheduler.Update(diff, [this]
             {
                 DoMeleeAttackIfReady();
             });
@@ -263,7 +253,6 @@ public:
     private:
         uint8 _deadCount;
         bool _isDead;
-        TaskScheduler _scheduler;
         uint8 _phase;
     };
 

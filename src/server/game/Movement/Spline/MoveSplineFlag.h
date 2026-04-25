@@ -1,22 +1,22 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef TRINITYSERVER_MOVESPLINEFLAG_H
-#define TRINITYSERVER_MOVESPLINEFLAG_H
+#ifndef AC_MOVESPLINEFLAG_H
+#define AC_MOVESPLINEFLAG_H
 
 #include "MovementTypedefs.h"
 #include <string>
@@ -40,7 +40,7 @@ namespace Movement
             Falling             = 0x00000200,           // Affects elevation computation, can't be combined with Parabolic flag
             No_Spline           = 0x00000400,
             Parabolic           = 0x00000800,           // Affects elevation computation, can't be combined with Falling flag
-            Walkmode            = 0x00001000,
+            CanSwim             = 0x00001000,
             Flying              = 0x00002000,           // Smooth movement(Catmullrom interpolation mode), flying animation
             OrientationFixed    = 0x00004000,           // Model orientation fixed
             Final_Point         = 0x00008000,
@@ -117,7 +117,7 @@ namespace Movement
         bool falling             : 1;
         bool no_spline           : 1;
         bool parabolic           : 1;
-        bool walkmode            : 1;
+        bool canSwim             : 1;
         bool flying              : 1;
         bool orientationFixed    : 1;
         bool final_point         : 1;
@@ -145,4 +145,4 @@ namespace Movement
 #endif
 }
 
-#endif // TRINITYSERVER_MOVESPLINEFLAG_H
+#endif // AC_MOVESPLINEFLAG_H

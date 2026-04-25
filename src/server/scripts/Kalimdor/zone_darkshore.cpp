@@ -1,41 +1,28 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-/* ScriptData
-SDName: Darkshore
-SD%Complete: 100
-SDComment: Quest support: 731, 2078, 5321
-SDCategory: Darkshore
-EndScriptData */
-
-/* ContentData
-npc_kerlonian
-npc_prospector_remtravel
-EndContentData */
-
+#include "CreatureScript.h"
 #include "Player.h"
-#include "ScriptMgr.h"
 #include "ScriptedCreature.h"
 #include "ScriptedEscortAI.h"
 #include "ScriptedFollowerAI.h"
 #include "ScriptedGossip.h"
 #include "SpellInfo.h"
 
-// Ours
 enum murkdeep
 {
     NPC_GREYMIST_HUNTER      = 2206,
@@ -75,11 +62,11 @@ public:
             me->SetReactState(REACT_PASSIVE);
         }
 
-        void EnterCombat(Unit*) override
+        void JustEngagedWith(Unit*) override
         {
             events.Reset();
-            events.ScheduleEvent(EVENT_SPELL_SUNDER_ARMOR, 5000);
-            events.ScheduleEvent(EVENT_SPELL_NET, 10000);
+            events.ScheduleEvent(EVENT_SPELL_SUNDER_ARMOR, 5s);
+            events.ScheduleEvent(EVENT_SPELL_NET, 10s);
         }
 
         void UpdateAI(uint32 diff) override
@@ -146,11 +133,11 @@ public:
             {
             case EVENT_SPELL_SUNDER_ARMOR:
                 me->CastSpell(me->GetVictim(), SPELL_SUNDER_ARMOR, false);
-                events.ScheduleEvent(EVENT_SPELL_SUNDER_ARMOR, 15000);
+                events.ScheduleEvent(EVENT_SPELL_SUNDER_ARMOR, 15s);
                 break;
             case EVENT_SPELL_NET:
                 me->CastSpell(me->GetVictim(), SPELL_NET, false);
-                events.ScheduleEvent(EVENT_SPELL_NET, 25000);
+                events.ScheduleEvent(EVENT_SPELL_NET, 25s);
                 break;
             }
 
@@ -159,7 +146,6 @@ public:
     };
 };
 
-// Theirs
 /*####
 # npc_kerlonian
 ####*/
@@ -175,6 +161,7 @@ enum Kerlonian
 
     SPELL_SLEEP_VISUAL          = 25148,
     SPELL_AWAKEN                = 17536,
+    SPELL_BEAR_FORM             = 18309,
     QUEST_SLEEPER_AWAKENED      = 5321,
     NPC_LILADRIS                = 11219                    //attackers entries unknown
 };
@@ -194,6 +181,8 @@ public:
         void Reset() override
         {
             FallAsleepTimer = urand(10000, 45000);
+
+            DoCastSelf(SPELL_BEAR_FORM);
         }
 
         void MoveInLineOfSight(Unit* who) override
@@ -329,7 +318,7 @@ public:
 
         void Reset() override {}
 
-        void EnterCombat(Unit* who) override
+        void JustEngagedWith(Unit* who) override
         {
             if (urand(0, 1))
                 Talk(SAY_REM_AGGRO, who);
@@ -341,6 +330,7 @@ public:
             // pSummoned->AI()->AttackStart(me);
         }
 
+        using CreatureAI::WaypointReached;
         void WaypointReached(uint32 waypointId) override
         {
             if (Player* player = GetPlayerForEscort())
@@ -408,7 +398,10 @@ public:
         if (quest->GetQuestId() == QUEST_ABSENT_MINDED_PT2)
         {
             if (npc_escortAI* pEscortAI = CAST_AI(npc_prospector_remtravel::npc_prospector_remtravelAI, creature->AI()))
-                pEscortAI->Start(false, false, player->GetGUID());
+            {
+                creature->SetWalk(true);
+                pEscortAI->Start(false, player->GetGUID());
+            }
 
             creature->SetFaction(FACTION_ESCORTEE_A_NEUTRAL_PASSIVE);
         }
@@ -452,7 +445,10 @@ public:
             _playerGUID.Clear();
         }
 
-        void Reset() override {}
+        void Reset() override
+        {
+            me->SetStandState(UNIT_STAND_STATE_STAND);
+        }
 
         void SpellHit(Unit* /*caster*/, SpellInfo const* spellInfo) override
         {
@@ -469,9 +465,9 @@ public:
                             me->SetFaction(FACTION_FRIENDLY);
                             me->GetMotionMaster()->MoveFollow(player, 1.0f, PET_FOLLOW_ANGLE - (PET_FOLLOW_ANGLE / 4));
                             _events.Reset();
-                            _events.ScheduleEvent(EVENT_CHECK_FOLLOWING, 1000);
+                            _events.ScheduleEvent(EVENT_CHECK_FOLLOWING, 1s);
                             player->KilledMonsterCredit(NPC_CAPTURED_RABID_THISTLE_BEAR);
-                            me->DespawnOrUnsummon(240000);
+                            me->DespawnOrUnsummon(240s);
                         }
                     }
                 }
@@ -496,7 +492,7 @@ public:
                         {
                             me->DespawnOrUnsummon();
                         }
-                        _events.ScheduleEvent(EVENT_CHECK_FOLLOWING, 1000);
+                        _events.ScheduleEvent(EVENT_CHECK_FOLLOWING, 1s);
                         break;
                 }
             }
@@ -560,7 +556,7 @@ public:
             }
         }
 
-        void SetGUID(ObjectGuid /*guid*/, int32 type) override
+        void SetGUID(ObjectGuid const& /*guid*/, int32 type) override
         {
             if (type == GUID_SCRIPT_INVOKER && _scriptRunning == false)
             {
@@ -568,7 +564,7 @@ public:
                 {
                     _bearGUID      = bear->GetGUID();
                     _scriptRunning = true;
-                    _events.ScheduleEvent(EVENT_POST_QUEST_ONE, 1000);
+                    _events.ScheduleEvent(EVENT_POST_QUEST_ONE, 1s);
                 }
             }
         }
@@ -586,14 +582,14 @@ public:
                             Talk(SAY_BE_CLEANSED);
                             me->CastSpell(bear, SPELL_THARNARIUMS_HEAL);
                         }
-                        _events.ScheduleEvent(EVENT_POST_QUEST_TWO, 4000);
+                        _events.ScheduleEvent(EVENT_POST_QUEST_TWO, 4s);
                         break;
                     case EVENT_POST_QUEST_TWO:
                         if (Creature* bear = ObjectAccessor::GetCreature(*me, _bearGUID))
                         {
                             bear->SetUInt32Value(UNIT_FIELD_BYTES_1, 7);
                         }
-                        _events.ScheduleEvent(EVENT_POST_QUEST_THREE, 1000);
+                        _events.ScheduleEvent(EVENT_POST_QUEST_THREE, 1s);
                         break;
                     case EVENT_POST_QUEST_THREE:
                         if (Creature* bear = ObjectAccessor::GetCreature(*me, _bearGUID))
@@ -637,12 +633,9 @@ public:
 
 void AddSC_darkshore()
 {
-    // Ours
     new npc_murkdeep();
     new npc_rabid_thistle_bear();
     new npc_tharnarian();
-
-    // Theirs
     new npc_kerlonian();
     new npc_prospector_remtravel();
 }

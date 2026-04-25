@@ -1,14 +1,14 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
@@ -21,10 +21,9 @@
 #include "Creature.h"
 #include "CreatureAI.h"
 #include "CreatureAIImpl.h"
-#include "InstanceScript.h"
 #include "EventMap.h"
-
-#define CAST_AI(a, b)   (dynamic_cast<a*>(b))
+#include "InstanceScript.h"
+#include "TaskScheduler.h"
 
 typedef std::list<WorldObject*> ObjectList;
 
@@ -89,7 +88,7 @@ public:
     void Summon(Creature const* summon) { storage_.push_back(summon->GetGUID()); }
     void Despawn(Creature const* summon) { storage_.remove(summon->GetGUID()); }
     void DespawnEntry(uint32 entry);
-    void DespawnAll(uint32 delay = 0);
+    void DespawnAll(Milliseconds delay = 0ms);
     bool IsAnyCreatureAlive() const;
     bool IsAnyCreatureWithEntryAlive(uint32 entry) const;
     bool IsAnyCreatureInCombat() const;
@@ -138,12 +137,27 @@ public:
         }
     }
 
+    void DoForAllSummons(std::function<void(WorldObject*)> exec)
+    {
+        // We need to use a copy of SummonList here, otherwise original SummonList would be modified
+        StorageType listCopy = storage_;
+
+        for (auto const& guid : listCopy)
+        {
+            if (WorldObject* summon = ObjectAccessor::GetWorldObject(*me, guid))
+            {
+                exec(summon);
+            }
+        }
+    }
+
     void DoZoneInCombat(uint32 entry = 0);
     void RemoveNotExisting();
     bool HasEntry(uint32 entry) const;
     uint32 GetEntryCount(uint32 entry) const;
     void Respawn();
     Creature* GetCreatureWithEntry(uint32 entry) const;
+    Creature* GetRandomCreatureWithEntry(uint32 entry) const;
 
 private:
     Creature* me;
@@ -165,7 +179,7 @@ class PlayerOrPetCheck
 public:
     bool operator() (WorldObject* unit) const
     {
-        if (unit->GetTypeId() != TYPEID_PLAYER)
+        if (!unit->IsPlayer())
             if (!unit->ToUnit()->GetOwnerGUID().IsPlayer())
                 return true;
 
@@ -185,7 +199,7 @@ struct ScriptedAI : public CreatureAI
     void AttackStartNoMove(Unit* target);
 
     // Called at any Damage from any attacker (before damage apply)
-    void DamageTaken(Unit* /*attacker*/, uint32& /*damage*/, DamageEffectType /*damagetype*/, SpellSchoolMask /*damageSchoolMask*/) override {}
+    void DamageTaken(Unit* /*attacker*/, uint32& /*damage*/, DamageEffectType /*damagetype*/, SpellSchoolMask /*damageSchoolMask*/) override;
 
     //Called at World update tick
     void UpdateAI(uint32 diff) override;
@@ -266,9 +280,6 @@ struct ScriptedAI : public CreatureAI
     //Pointer to creature we are manipulating
     Creature* me;
 
-    //For fleeing
-    bool IsFleeing;
-
     // *************
     //Pure virtual functions
     // *************
@@ -277,9 +288,9 @@ struct ScriptedAI : public CreatureAI
     void Reset() override {}
 
     //Called at creature aggro either by MoveInLOS or Attack Start
-    void EnterCombat(Unit* /*victim*/) override {}
+    void JustEngagedWith(Unit* /*who*/) override {}
 
-    // Called before EnterCombat even before the creature is in combat.
+    // Called before JustEngagedWith even before the creature is in combat.
     void AttackStart(Unit* /*target*/) override;
 
     // *************
@@ -294,6 +305,9 @@ struct ScriptedAI : public CreatureAI
 
     //Stop attack of current victim
     void DoStopAttack();
+
+    //Reward kill credit to all players from the oposing faction in the area (faction leaders)
+    void DoRewardPlayersInArea();
 
     //Cast spell by spell info
     void DoCastSpell(Unit* target, SpellInfo const* spellInfo, bool triggered = false);
@@ -321,6 +335,7 @@ struct ScriptedAI : public CreatureAI
 
     //Teleports a player without dropping threat (only teleports to same map)
     void DoTeleportPlayer(Unit* unit, float x, float y, float z, float o);
+    void DoTeleportPlayer(Unit* unit, Position pos) { DoTeleportPlayer(unit, pos.GetPositionX(), pos.GetPositionY(), pos.GetPositionZ(), pos.GetOrientation()); };
     void DoTeleportAll(float x, float y, float z, float o);
 
     //Returns friendly unit with the most amount of hp missing from max hp
@@ -338,6 +353,18 @@ struct ScriptedAI : public CreatureAI
     //Spawns a creature relative to me
     Creature* DoSpawnCreature(uint32 entry, float offsetX, float offsetY, float offsetZ, float angle, uint32 type, uint32 despawntime);
 
+    bool IsUniqueTimedEventDone(uint32 id) const { return _uniqueTimedEvents.find(id) != _uniqueTimedEvents.end(); }
+    void SetUniqueTimedEventDone(uint32 id) { _uniqueTimedEvents.insert(id); }
+    void ResetUniqueTimedEvent(uint32 id) { _uniqueTimedEvents.erase(id); }
+    void ClearUniqueTimedEventsDone() { _uniqueTimedEvents.clear(); }
+
+    // Schedules a timed event using task scheduler.
+    void ScheduleTimedEvent(Milliseconds timerMin, Milliseconds timerMax, std::function<void()> exec, Milliseconds repeatMin, Milliseconds repeatMax = 0ms, uint32 uniqueId = 0);
+    void ScheduleTimedEvent(Milliseconds timerMax, std::function<void()> exec, Milliseconds repeatMin, Milliseconds repeatMax = 0ms, uint32 uniqueId = 0) { ScheduleTimedEvent(0ms, timerMax, exec, repeatMin, repeatMax, uniqueId); };
+
+    // Schedules a timed event using task scheduler that never repeats. Requires an unique non-zero ID.
+    void ScheduleUniqueTimedEvent(Milliseconds timer, std::function<void()> exec, uint32 uniqueId) { ScheduleTimedEvent(0ms, timer, exec, 0ms, 0ms, uniqueId); };
+
     bool HealthBelowPct(uint32 pct) const { return me->HealthBelowPct(pct); }
     bool HealthAbovePct(uint32 pct) const { return me->HealthAbovePct(pct); }
 
@@ -345,14 +372,6 @@ struct ScriptedAI : public CreatureAI
     SpellInfo const* SelectSpell(Unit* target, uint32 school, uint32 mechanic, SelectTargetType targets, uint32 powerCostMin, uint32 powerCostMax, float rangeMin, float rangeMax, SelectEffect effect);
 
     void SetEquipmentSlots(bool loadDefault, int32 mainHand = EQUIP_NO_CHANGE, int32 offHand = EQUIP_NO_CHANGE, int32 ranged = EQUIP_NO_CHANGE);
-
-    // Used to control if MoveChase() is to be used or not in AttackStart(). Some creatures does not chase victims
-    // NOTE: If you use SetCombatMovement while the creature is in combat, it will do NOTHING - This only affects AttackStart
-    //       You should make the necessary to make it happen so.
-    //       Remember that if you modified _isCombatMovementAllowed (e.g: using SetCombatMovement) it will not be reset at Reset().
-    //       It will keep the last value you set.
-    void SetCombatMovement(bool allowMovement);
-    bool IsCombatMovementAllowed() const { return _isCombatMovementAllowed; }
 
     virtual bool CheckEvadeIfOutOfCombatArea() const { return false; }
 
@@ -423,10 +442,43 @@ struct ScriptedAI : public CreatureAI
 
     Player* SelectTargetFromPlayerList(float maxdist, uint32 excludeAura = 0, bool mustBeInLOS = false) const;
 
+    // Allows dropping to 1 HP but prevents creature from dying.
+    void SetInvincibility(bool apply) { _invincible = apply; };
+    [[nodiscard]] bool IsInvincible() const { return _invincible; };
+
+    // Disables creature auto attacks.
+    void SetAutoAttackAllowed(bool allow) { _canAutoAttack = allow; };
+    [[nodiscard]] bool IsAutoAttackAllowed() const { return _canAutoAttack; };
+
 private:
     Difficulty _difficulty;
-    bool _isCombatMovementAllowed;
     bool _isHeroic;
+    bool _invincible;
+    bool _canAutoAttack;
+    std::unordered_set<uint32> _uniqueTimedEvents;
+};
+
+enum HealthCheckStatus
+{
+    HEALTH_CHECK_PROCESSED,
+    HEALTH_CHECK_SCHEDULED,
+    HEALTH_CHECK_PENDING
+};
+
+struct HealthCheckEventData
+{
+    HealthCheckEventData(uint8 healthPct, std::function<void()> exec, uint8 status = HEALTH_CHECK_SCHEDULED, bool allowedWhileCasting = true, Milliseconds Delay = 0ms) : _healthPct(healthPct), _exec(exec), _status(status), _allowedWhileCasting(allowedWhileCasting), _delay(Delay) { };
+
+    uint8 _healthPct;
+    std::function<void()> _exec;
+    uint8 _status;
+    bool _allowedWhileCasting;
+    Milliseconds _delay;
+
+    [[nodiscard]] bool HasBeenProcessed() const { return _status == HEALTH_CHECK_PROCESSED; };
+    [[nodiscard]] bool IsPending() const { return _status == HEALTH_CHECK_PENDING; };
+    [[nodiscard]] Milliseconds GetDelay() const { return _delay; };
+    void UpdateStatus(uint8 status) { _status = status; };
 };
 
 class BossAI : public ScriptedAI
@@ -435,13 +487,31 @@ public:
     BossAI(Creature* creature, uint32 bossId);
     ~BossAI() override {}
 
+    float callForHelpRange;
+
     InstanceScript* const instance;
 
+    bool CanRespawn() override;
+
+    void OnSpellCast(SpellInfo const* spell) override;
+    void OnChannelFinished(SpellInfo const* spell) override;
+    void OnSpellFailed(SpellInfo const* spell) override;
+    void DamageTaken(Unit* attacker, uint32& damage, DamageEffectType damagetype, SpellSchoolMask damageSchoolMask) override;
     void JustSummoned(Creature* summon) override;
     void SummonedCreatureDespawn(Creature* summon) override;
     void SummonedCreatureDespawnAll() override;
 
     void UpdateAI(uint32 diff) override;
+
+    void ScheduleHealthCheckEvent(uint32 healthPct, std::function<void()> exec, bool allowedWhileCasting = true);
+    void ScheduleHealthCheckEvent(std::initializer_list<uint8> healthPct, std::function<void()> exec, bool allowedWhileCasting = true);
+    void ProcessHealthCheck();
+
+    // @brief Casts the spell after the fixed time and says the text id if provided. Timer will run even if the creature is casting or out of combat.
+    // @param spellId The spell to cast.
+    // @param timer The time to wait before casting the spell.
+    // @param textId The text id to say.
+    void ScheduleEnrageTimer(uint32 spellId, Milliseconds timer, uint8 textId = 0);
 
     // Hook used to execute events scheduled into EventMap without the need
     // to override UpdateAI
@@ -449,24 +519,30 @@ public:
     // is supposed to run more than once
     virtual void ExecuteEvent(uint32 /*eventId*/) { }
 
+    virtual void ScheduleTasks() { }
+
     void Reset() override { _Reset(); }
-    void EnterCombat(Unit* /*who*/) override { _EnterCombat(); }
+    void JustEngagedWith(Unit* /*who*/) override { _JustEngagedWith(); }
+    void EnterEvadeMode(EvadeReason why = EVADE_REASON_OTHER) override { _EnterEvadeMode(why); }
     void JustDied(Unit* /*killer*/) override { _JustDied(); }
     void JustReachedHome() override { _JustReachedHome(); }
 
 protected:
     void _Reset();
-    void _EnterCombat();
+    void _JustEngagedWith();
     void _JustDied();
     void _JustReachedHome() { me->setActive(false); }
+    void _EnterEvadeMode(EvadeReason why = EVADE_REASON_OTHER);
 
     void TeleportCheaters();
 
-    EventMap events;
     SummonList summons;
 
 private:
+    void _CheckHealthAfterCast();
     uint32 const _bossId;
+    std::list<HealthCheckEventData> _healthCheckEvents;
+    HealthCheckEventData _nextHealthCheck;
 };
 
 class WorldBossAI : public ScriptedAI
@@ -487,12 +563,12 @@ public:
     virtual void ExecuteEvent(uint32 /*eventId*/) { }
 
     void Reset() override { _Reset(); }
-    void EnterCombat(Unit* /*who*/) override { _EnterCombat(); }
+    void JustEngagedWith(Unit* /*who*/) override { _JustEngagedWith(); }
     void JustDied(Unit* /*killer*/) override { _JustDied(); }
 
 protected:
     void _Reset();
-    void _EnterCombat();
+    void _JustEngagedWith();
     void _JustDied();
 
     EventMap events;

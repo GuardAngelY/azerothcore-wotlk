@@ -1,29 +1,29 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "InstanceMapScript.h"
 #include "InstanceScript.h"
 #include "ObjectMgr.h"
-#include "ScriptMgr.h"
 #include "razorfen_downs.h"
 
 class instance_razorfen_downs : public InstanceMapScript
 {
 public:
-    instance_razorfen_downs() : InstanceMapScript("instance_razorfen_downs", 129) { }
+    instance_razorfen_downs() : InstanceMapScript("instance_razorfen_downs", MAP_RAZORFEN_DOWNS) { }
 
     struct instance_razorfen_downs_InstanceMapScript : public InstanceScript
     {
@@ -33,6 +33,7 @@ public:
 
         void Initialize() override
         {
+            SetHeaders(DataHeader);
             _gongPhase = 0;
             _firesState = 0;
         }
@@ -70,27 +71,15 @@ public:
             SaveToDB();
         }
 
-        std::string GetSaveData() override
+        void ReadSaveDataMore(std::istringstream& data) override
         {
-            std::ostringstream saveStream;
-            saveStream << "R D " << _gongPhase << ' ' << _firesState;
-            return saveStream.str();
+            data >> _gongPhase;
+            data >> _firesState;
         }
 
-        void Load(const char* str) override
+        void WriteSaveDataMore(std::ostringstream& data) override
         {
-            if (!str)
-                return;
-
-            char dataHead1, dataHead2;
-            std::istringstream loadStream(str);
-            loadStream >> dataHead1 >> dataHead2;
-
-            if (dataHead1 == 'R' && dataHead2 == 'D')
-            {
-                loadStream >> _gongPhase;
-                loadStream >> _firesState;
-            }
+            data << _gongPhase << ' ' << _firesState;
         }
 
     private:

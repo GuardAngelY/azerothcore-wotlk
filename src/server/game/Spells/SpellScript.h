@@ -1,14 +1,14 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
@@ -74,9 +74,9 @@ protected:
         EffectHook(uint8 _effIndex);
         virtual ~EffectHook() { }
 
-        uint8 GetAffectedEffectsMask(SpellInfo const* spellEntry);
-        bool IsEffectAffected(SpellInfo const* spellEntry, uint8 effIndex);
-        virtual bool CheckEffect(SpellInfo const* spellEntry, uint8 effIndex) = 0;
+        uint8 GetAffectedEffectsMask(SpellInfo const* spellInfo);
+        bool IsEffectAffected(SpellInfo const* spellInfo, uint8 effIndex);
+        virtual bool CheckEffect(SpellInfo const* spellInfo, uint8 effIndex) = 0;
         std::string EffIndexToString();
     protected:
         uint8 effIndex;
@@ -86,7 +86,7 @@ protected:
     {
     public:
         EffectNameCheck(uint16 _effName) { effName = _effName; }
-        bool Check(SpellInfo const* spellEntry, uint8 effIndex);
+        bool Check(SpellInfo const* spellInfo, uint8 effIndex);
         std::string ToString();
     private:
         uint16 effName;
@@ -96,7 +96,7 @@ protected:
     {
     public:
         EffectAuraNameCheck(uint16 _effAurName) { effAurName = _effAurName; }
-        bool Check(SpellInfo const* spellEntry, uint8 effIndex);
+        bool Check(SpellInfo const* spellInfo, uint8 effIndex);
         std::string ToString();
     private:
         uint16 effAurName;
@@ -114,7 +114,7 @@ public:
     virtual void Register() = 0;
     // Function called on server startup, if returns false script won't be used in core
     // use for: dbc/template data presence/correctness checks
-    virtual bool Validate(SpellInfo const* /*spellEntry*/) { return true; }
+    virtual bool Validate(SpellInfo const* /*spellInfo*/) { return true; }
     // Function called when script is created, if returns false script will be unloaded afterwards
     // use for: initializing local script variables (DO NOT USE CONSTRUCTOR FOR THIS PURPOSE!)
     virtual bool Load() { return true; }
@@ -218,7 +218,7 @@ public:
     public:
         EffectHandler(SpellEffectFnType _pEffectHandlerScript, uint8 _effIndex, uint16 _effName);
         std::string ToString();
-        bool CheckEffect(SpellInfo const* spellEntry, uint8 effIndex) override;
+        bool CheckEffect(SpellInfo const* spellInfo, uint8 effIndex) override;
         void Call(SpellScript* spellScript, SpellEffIndex effIndex);
     private:
         SpellEffectFnType pEffectHandlerScript;
@@ -499,7 +499,8 @@ enum AuraScriptHookType
     AURA_SCRIPT_HOOK_AFTER_DISPEL,
     // Spell Proc Hooks
     AURA_SCRIPT_HOOK_CHECK_PROC,
-    AURA_SCRIPT_HOOK_CHECK_AFTER_PROC,
+    AURA_SCRIPT_HOOK_CHECK_EFFECT_PROC,
+    AURA_SCRIPT_HOOK_AFTER_CHECK_PROC,
     AURA_SCRIPT_HOOK_PREPARE_PROC,
     AURA_SCRIPT_HOOK_PROC,
     AURA_SCRIPT_HOOK_EFFECT_PROC,
@@ -530,6 +531,8 @@ public:
         typedef void(CLASSNAME::*AuraEffectAbsorbFnType)(AuraEffect*, DamageInfo &, uint32 &); \
         typedef void(CLASSNAME::*AuraEffectSplitFnType)(AuraEffect*, DamageInfo &, uint32 &); \
         typedef bool(CLASSNAME::*AuraCheckProcFnType)(ProcEventInfo&); \
+        typedef bool(CLASSNAME::*AuraCheckEffectProcFnType)(AuraEffect const*, ProcEventInfo&); \
+        typedef bool(CLASSNAME::*AuraAfterCheckProcFnType)(ProcEventInfo&, bool); \
         typedef void(CLASSNAME::*AuraProcFnType)(ProcEventInfo&); \
         typedef void(CLASSNAME::*AuraEffectProcFnType)(AuraEffect const*, ProcEventInfo&); \
 
@@ -556,7 +559,7 @@ public:
     public:
         EffectBase(uint8 _effIndex, uint16 _effName);
         std::string ToString();
-        bool CheckEffect(SpellInfo const* spellEntry, uint8 effIndex) override;
+        bool CheckEffect(SpellInfo const* spellInfo, uint8 effIndex) override;
     };
     class EffectPeriodicHandler : public EffectBase
     {
@@ -639,6 +642,22 @@ public:
     private:
         AuraCheckProcFnType _HandlerScript;
     };
+    class CheckEffectProcHandler : public EffectBase
+    {
+    public:
+        CheckEffectProcHandler(AuraCheckEffectProcFnType handlerScript, uint8 effIndex, uint16 effName);
+        bool Call(AuraScript* auraScript, AuraEffect const* aurEff, ProcEventInfo& eventInfo);
+    private:
+        AuraCheckEffectProcFnType _HandlerScript;
+    };
+    class AfterCheckProcHandler
+    {
+    public:
+        AfterCheckProcHandler(AuraAfterCheckProcFnType handlerScript);
+        bool Call(AuraScript* auraScript, ProcEventInfo& eventInfo, bool isTriggeredAtSpellProcEvent);
+    private:
+        AuraAfterCheckProcFnType _HandlerScript;
+    };
     class AuraProcHandler
     {
     public:
@@ -669,6 +688,8 @@ public:
         class EffectManaShieldFunction : public AuraScript::EffectManaShieldHandler { public: EffectManaShieldFunction(AuraEffectAbsorbFnType _pEffectHandlerScript, uint8 _effIndex) : AuraScript::EffectManaShieldHandler((AuraScript::AuraEffectAbsorbFnType)_pEffectHandlerScript, _effIndex) {} }; \
         class EffectSplitFunction : public AuraScript::EffectSplitHandler { public: EffectSplitFunction(AuraEffectSplitFnType _pEffectHandlerScript, uint8 _effIndex) : AuraScript::EffectSplitHandler((AuraScript::AuraEffectSplitFnType)_pEffectHandlerScript, _effIndex) {} }; \
         class CheckProcHandlerFunction : public AuraScript::CheckProcHandler { public: CheckProcHandlerFunction(AuraCheckProcFnType handlerScript) : AuraScript::CheckProcHandler((AuraScript::AuraCheckProcFnType)handlerScript) {} }; \
+        class CheckEffectProcHandlerFunction : public AuraScript::CheckEffectProcHandler { public: CheckEffectProcHandlerFunction(AuraCheckEffectProcFnType handlerScript, uint8 effIndex, uint16 effName) : AuraScript::CheckEffectProcHandler((AuraScript::AuraCheckEffectProcFnType)handlerScript, effIndex, effName) {} }; \
+        class AfterCheckProcHandlerFunction : public AuraScript::AfterCheckProcHandler { public: AfterCheckProcHandlerFunction(AuraAfterCheckProcFnType handlerScript) : AuraScript::AfterCheckProcHandler((AuraScript::AuraAfterCheckProcFnType)handlerScript) {} }; \
         class AuraProcHandlerFunction : public AuraScript::AuraProcHandler { public: AuraProcHandlerFunction(AuraProcFnType handlerScript) : AuraScript::AuraProcHandler((AuraScript::AuraProcFnType)handlerScript) {} }; \
         class EffectProcHandlerFunction : public AuraScript::EffectProcHandler { public: EffectProcHandlerFunction(AuraEffectProcFnType effectHandlerScript, uint8 effIndex, uint16 effName) : AuraScript::EffectProcHandler((AuraScript::AuraEffectProcFnType)effectHandlerScript, effIndex, effName) {} }; \
 
@@ -805,11 +826,19 @@ public:
     // example: DoCheckProc += AuraCheckProcFn(class::function);
     // where function is: bool function (ProcEventInfo& eventInfo);
     HookList<CheckProcHandler> DoCheckProc;
-    // executed when aura checks if it can proc
-    // example: DoCheckAfterProc += AuraCheckProcFn(class::function);
-    // where function is: bool function (ProcEventInfo& eventInfo);
-    HookList<CheckProcHandler> DoCheckAfterProc;
 #define AuraCheckProcFn(F) CheckProcHandlerFunction(&F)
+
+    // executed when aura effect checks if it can proc the aura
+    // example: DoCheckEffectProc += AuraCheckEffectProcFn(class::function, EffectIndexSpecifier, EffectAuraNameSpecifier);
+    // where function is: bool function (AuraEffect const* aurEff, ProcEventInfo& eventInfo);
+    HookList<CheckEffectProcHandler> DoCheckEffectProc;
+#define AuraCheckEffectProcFn(F, I, N) CheckEffectProcHandlerFunction(&F, I, N)
+
+    // executed when aura checks if it can proc
+    // example: DoAfterCheckProc += AuraCheckProcFn(class::function);
+    // where function is: bool function (ProcEventInfo& eventInfo);
+    HookList<AfterCheckProcHandler> DoAfterCheckProc;
+#define AuraAfterCheckProcFn(F) AfterCheckProcHandlerFunction(&F)
 
     // executed before aura procs (possibility to prevent charge drop/cooldown)
     // example: DoPrepareProc += AuraProcFn(class::function);
@@ -859,7 +888,7 @@ public:
     DynamicObject* GetDynobjOwner() const;
 
     // removes aura with remove mode (see AuraRemoveMode enum)
-    void Remove(uint32 removeMode = 0);
+    void Remove(AuraRemoveMode removeMode = AURA_REMOVE_BY_DEFAULT);
     // returns aura object of script
     Aura* GetAura() const;
 

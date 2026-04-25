@@ -1,14 +1,14 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
@@ -16,24 +16,24 @@
  */
 
 #include "HomeMovementGenerator.h"
+#include "CombatManager.h"
 #include "Creature.h"
 #include "CreatureAI.h"
 #include "DisableMgr.h"
 #include "MoveSplineInit.h"
-#include "WorldPacket.h"
 
 void HomeMovementGenerator<Creature>::DoInitialize(Creature* owner)
 {
+    owner->GetCombatManager().SetEvadeState(EVADE_STATE_HOME);
     _setTargetLocation(owner);
 }
 
 void HomeMovementGenerator<Creature>::DoFinalize(Creature* owner)
 {
+    owner->GetCombatManager().SetEvadeState(EVADE_STATE_NONE);
     owner->ClearUnitState(UNIT_STATE_EVADE);
-    if (_arrived)
+    if (arrived)
     {
-        // Xinef: npc run by default
-        //owner->SetWalk(true);
         owner->LoadCreaturesAddon(true);
         owner->AI()->JustReachedHome();
     }
@@ -64,19 +64,19 @@ void HomeMovementGenerator<Creature>::_setTargetLocation(Creature* owner)
     }
 
     owner->UpdateAllowedPositionZ(x, y, z);
-    init.MoveTo(x, y, z, DisableMgr::IsPathfindingEnabled(owner->FindMap()), true);
-    init.SetWalk(false);
+    init.MoveTo(x, y, z, sDisableMgr->IsPathfindingEnabled(owner->FindMap()), true);
+    init.SetWalk(_walk);
     init.Launch();
 
-    _arrived = false;
+    arrived = false;
 
     owner->ClearUnitState(uint32(UNIT_STATE_ALL_STATE & ~(UNIT_STATE_POSSESSED | UNIT_STATE_EVADE | UNIT_STATE_IGNORE_PATHFINDING | UNIT_STATE_NO_ENVIRONMENT_UPD)));
 }
 
 bool HomeMovementGenerator<Creature>::DoUpdate(Creature* owner, const uint32 /*time_diff*/)
 {
-    _arrived = owner->movespline->Finalized();
-    if (_arrived)
+    arrived = owner->movespline->Finalized();
+    if (arrived)
         return false;
 
     if (i_recalculateTravel)

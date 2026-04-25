@@ -1,14 +1,14 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
@@ -40,9 +40,9 @@ void WorldSession::HandleGrantLevel(WorldPacket& recvData)
         error = ERR_REFER_A_FRIEND_NOT_REFERRED_BY;
     else if (target->GetTeamId() != _player->GetTeamId())
         error = ERR_REFER_A_FRIEND_DIFFERENT_FACTION;
-    else if (target->getLevel() >= _player->getLevel())
+    else if (target->GetLevel() >= _player->GetLevel())
         error = ERR_REFER_A_FRIEND_TARGET_TOO_HIGH;
-    else if (target->getLevel() >= sWorld->getIntConfig(CONFIG_MAX_RECRUIT_A_FRIEND_BONUS_PLAYER_LEVEL))
+    else if (target->GetLevel() >= sWorld->getIntConfig(CONFIG_MAX_RECRUIT_A_FRIEND_BONUS_PLAYER_LEVEL))
         error = ERR_REFER_A_FRIEND_GRANT_LEVEL_MAX_I;
     else if (target->GetGroup() != _player->GetGroup())
         error = ERR_REFER_A_FRIEND_NOT_IN_GROUP;
@@ -60,7 +60,7 @@ void WorldSession::HandleGrantLevel(WorldPacket& recvData)
 
     WorldPacket data2(SMSG_PROPOSE_LEVEL_GRANT, 8);
     data2 << _player->GetPackGUID();
-    target->GetSession()->SendPacket(&data2);
+    target->SendDirectMessage(&data2);
 }
 
 void WorldSession::HandleAcceptGrantLevel(WorldPacket& recvData)
@@ -82,5 +82,5 @@ void WorldSession::HandleAcceptGrantLevel(WorldPacket& recvData)
     else
         return;
 
-    _player->GiveLevel(_player->getLevel() + 1);
+    _player->GiveLevel(_player->GetLevel() + 1);
 }

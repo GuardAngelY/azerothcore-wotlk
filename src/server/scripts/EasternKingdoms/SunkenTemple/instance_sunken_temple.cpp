@@ -1,38 +1,41 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "AreaTriggerScript.h"
 #include "CreatureAI.h"
 #include "EventMap.h"
+#include "InstanceMapScript.h"
 #include "InstanceScript.h"
 #include "Player.h"
-#include "ScriptMgr.h"
 #include "SpellScript.h"
-#include "sunken_temple.h"
+#include "SpellScriptLoader.h"
 #include "Unit.h"
+#include "sunken_temple.h"
 
 class instance_sunken_temple : public InstanceMapScript
 {
 public:
-    instance_sunken_temple() : InstanceMapScript("instance_sunken_temple", 109) { }
+    instance_sunken_temple() : InstanceMapScript("instance_sunken_temple", MAP_SUNKEN_TEMPLE) { }
 
     struct instance_sunken_temple_InstanceMapScript : public InstanceScript
     {
         instance_sunken_temple_InstanceMapScript(Map* map) : InstanceScript(map)
         {
+            SetHeaders(DataHeader);
         }
 
         void Initialize() override
@@ -61,7 +64,7 @@ public:
 
         void OnUnitDeath(Unit* unit) override
         {
-            if (unit->GetTypeId() == TYPEID_UNIT && unit->GetCreatureType() == CREATURE_TYPE_DRAGONKIN && unit->GetEntry() != NPC_SHADE_OF_ERANIKUS)
+            if (unit->IsCreature() && unit->GetCreatureType() == CREATURE_TYPE_DRAGONKIN && unit->GetEntry() != NPC_SHADE_OF_ERANIKUS)
                 _dragonkinList.remove(unit->GetGUID());
             if (unit->GetEntry() == NPC_JAMMAL_AN_THE_PROPHET)
             {
@@ -89,7 +92,8 @@ public:
                     break;
                 case GO_ATALAI_IDOL:
                     if (_statuePhase == MAX_STATUE_PHASE)
-                        gameobject->SummonGameObject(GO_IDOL_OF_HAKKAR, -480.08f, 94.29f, -189.72f, 1.571f, 0.0f, 0.0f, 0.0f, 0.0f, 0);
+                        gameobject->SummonGameObject(GO_IDOL_OF_HAKKAR, -476.269317626953125f, 94.4119873046875f, -189.729660034179687f, 1.588248729705810546f, 0.0f, 0.0f, 0.713250160217285156f, 0.700909554958343505f, 0); // VerifiedBuild 50250
+
                     break;
                 case GO_IDOL_OF_HAKKAR:
                     if (_encounters[TYPE_ATAL_ALARION] == DONE)
@@ -107,13 +111,12 @@ public:
             switch (type)
             {
                 case DATA_STATUES:
-                    _events.ScheduleEvent(DATA_STATUES, 0);
+                    _events.ScheduleEvent(DATA_STATUES, 0ms);
                     break;
                 case DATA_DEFENDER_KILLED:
                     ++_defendersKilled;
                     if (_defendersKilled == DEFENDERS_COUNT)
                     {
-                        instance->LoadGrid(-425.89f, -86.07f);
                         if (Creature* jammal = instance->GetCreature(_jammalanGUID))
                             jammal->AI()->Talk(0);
                         if (GameObject* forcefield = instance->GetGameObject(_forcefieldGUID))
@@ -163,38 +166,28 @@ public:
                 case DATA_STATUES:
                     ++_statuePhase;
                     if (_statuePhase == MAX_STATUE_PHASE)
-                        instance->SummonGameObject(GO_IDOL_OF_HAKKAR, -480.08f, 94.29f, -189.72f, 1.571f, 0.0f, 0.0f, 0.0f, 0.0f, 0);
+                        instance->SummonGameObject(GO_IDOL_OF_HAKKAR, -476.269317626953125f, 94.4119873046875f, -189.729660034179687f, 1.588248729705810546f, 0.0f, 0.0f, 0.713250160217285156f, 0.700909554958343505f, 0); // VerifiedBuild 50250
+
                     break;
             }
         }
 
-        std::string GetSaveData() override
+        void ReadSaveDataMore(std::istringstream& data) override
         {
-            std::ostringstream saveStream;
-            saveStream << "T A " << _encounters[0] << ' ' << _encounters[1] << ' ' << _encounters[2] << ' ' << _statuePhase << ' ' << _defendersKilled;
-            return saveStream.str();
+            data >> _encounters[0];
+            data >> _encounters[1];
+            data >> _encounters[2];
+            data >> _statuePhase;
+            data >> _defendersKilled;
         }
 
-        void Load(const char* in) override
+        void WriteSaveDataMore(std::ostringstream& data) override
         {
-            if (!in)
-                return;
-
-            char dataHead1, dataHead2;
-            std::istringstream loadStream(in);
-            loadStream >> dataHead1 >> dataHead2;
-            if (dataHead1 == 'T' && dataHead2 == 'A')
-            {
-                for (uint8 i = 0; i < MAX_ENCOUNTERS; ++i)
-                {
-                    loadStream >> _encounters[i];
-                    if (_encounters[i] == IN_PROGRESS)
-                        _encounters[i] = NOT_STARTED;
-                }
-
-                loadStream >> _statuePhase;
-                loadStream >> _defendersKilled;
-            }
+            data << _encounters[0] << ' '
+                << _encounters[1] << ' '
+                << _encounters[2] << ' '
+                << _statuePhase << ' '
+                << _defendersKilled;
         }
 
     private:
@@ -235,71 +228,54 @@ public:
     }
 };
 
-class spell_temple_of_atal_hakkar_hex_of_jammal_an : public SpellScriptLoader
+class spell_temple_of_atal_hakkar_hex_of_jammal_an_aura : public AuraScript
 {
-public:
-    spell_temple_of_atal_hakkar_hex_of_jammal_an() : SpellScriptLoader("spell_temple_of_atal_hakkar_hex_of_jammal_an") { }
+    PrepareAuraScript(spell_temple_of_atal_hakkar_hex_of_jammal_an_aura);
 
-    class spell_temple_of_atal_hakkar_hex_of_jammal_an_AuraScript : public AuraScript
+    bool Validate(SpellInfo const* /*spellInfo*/) override
     {
-        PrepareAuraScript(spell_temple_of_atal_hakkar_hex_of_jammal_an_AuraScript);
+        return ValidateSpellInfo({ HEX_OF_JAMMAL_AN, HEX_OF_JAMMAL_AN_CHARM });
+    }
 
-        void OnRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
-        {
-            if (Unit* caster = GetCaster())
-                if (caster->IsAlive() && caster->IsInCombat())
-                {
-                    caster->CastSpell(GetTarget(), HEX_OF_JAMMAL_AN, true);
-                    caster->CastSpell(GetTarget(), HEX_OF_JAMMAL_AN_CHARM, true);
-                }
-        }
-
-        void Register() override
-        {
-            OnEffectRemove += AuraEffectRemoveFn(spell_temple_of_atal_hakkar_hex_of_jammal_an_AuraScript::OnRemove, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
-        }
-    };
-
-    AuraScript* GetAuraScript() const override
+    void OnRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
     {
-        return new spell_temple_of_atal_hakkar_hex_of_jammal_an_AuraScript();
+        if (Unit* caster = GetCaster())
+            if (caster->IsAlive() && caster->IsInCombat())
+            {
+                caster->CastSpell(GetTarget(), HEX_OF_JAMMAL_AN, true);
+                caster->CastSpell(GetTarget(), HEX_OF_JAMMAL_AN_CHARM, true);
+            }
+    }
+
+    void Register() override
+    {
+        OnEffectRemove += AuraEffectRemoveFn(spell_temple_of_atal_hakkar_hex_of_jammal_an_aura::OnRemove, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
     }
 };
 
-class spell_temple_of_atal_hakkar_awaken_the_soulflayer : public SpellScriptLoader
+class spell_temple_of_atal_hakkar_awaken_the_soulflayer : public SpellScript
 {
-public:
-    spell_temple_of_atal_hakkar_awaken_the_soulflayer() : SpellScriptLoader("spell_temple_of_atal_hakkar_awaken_the_soulflayer") { }
+    PrepareSpellScript(spell_temple_of_atal_hakkar_awaken_the_soulflayer);
 
-    class spell_temple_of_atal_hakkar_awaken_the_soulflayer_SpellScript : public SpellScript
+    void HandleSendEvent(SpellEffIndex effIndex)
     {
-        PrepareSpellScript(spell_temple_of_atal_hakkar_awaken_the_soulflayer_SpellScript);
+        PreventHitDefaultEffect(effIndex);
+        InstanceScript* instanceScript = GetCaster()->GetInstanceScript();
+        Map* map = GetCaster()->FindMap();
+        if (!map || !instanceScript || instanceScript->GetData(TYPE_HAKKAR_EVENT) != NOT_STARTED)
+            return;
 
-        void HandleSendEvent(SpellEffIndex effIndex)
+        Position pos = {-466.795f, 272.863f, -90.447f, 1.57f};
+        if (TempSummon* summon = map->SummonCreature(NPC_SHADE_OF_HAKKAR, pos))
         {
-            PreventHitDefaultEffect(effIndex);
-            InstanceScript* instanceScript = GetCaster()->GetInstanceScript();
-            Map* map = GetCaster()->FindMap();
-            if (!map || !instanceScript || instanceScript->GetData(TYPE_HAKKAR_EVENT) != NOT_STARTED)
-                return;
-
-            Position pos = {-466.795f, 272.863f, -90.447f, 1.57f};
-            if (TempSummon* summon = map->SummonCreature(NPC_SHADE_OF_HAKKAR, pos))
-            {
-                summon->SetTempSummonType(TEMPSUMMON_MANUAL_DESPAWN);
-                instanceScript->SetData(TYPE_HAKKAR_EVENT, IN_PROGRESS);
-            }
+            summon->SetTempSummonType(TEMPSUMMON_MANUAL_DESPAWN);
+            instanceScript->SetData(TYPE_HAKKAR_EVENT, IN_PROGRESS);
         }
+    }
 
-        void Register() override
-        {
-            OnEffectHit += SpellEffectFn(spell_temple_of_atal_hakkar_awaken_the_soulflayer_SpellScript::HandleSendEvent, EFFECT_0, SPELL_EFFECT_SEND_EVENT);
-        }
-    };
-
-    SpellScript* GetSpellScript() const override
+    void Register() override
     {
-        return new spell_temple_of_atal_hakkar_awaken_the_soulflayer_SpellScript();
+        OnEffectHit += SpellEffectFn(spell_temple_of_atal_hakkar_awaken_the_soulflayer::HandleSendEvent, EFFECT_0, SPELL_EFFECT_SEND_EVENT);
     }
 };
 
@@ -307,6 +283,6 @@ void AddSC_instance_sunken_temple()
 {
     new instance_sunken_temple();
     new at_malfurion_stormrage();
-    new spell_temple_of_atal_hakkar_hex_of_jammal_an();
-    new spell_temple_of_atal_hakkar_awaken_the_soulflayer();
+    RegisterSpellScript(spell_temple_of_atal_hakkar_hex_of_jammal_an_aura);
+    RegisterSpellScript(spell_temple_of_atal_hakkar_awaken_the_soulflayer);
 }

@@ -1,14 +1,14 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
@@ -21,18 +21,13 @@
 #include "DynamicObject.h"
 #include "GameObject.h"
 #include "GridNotifiers.h"
-#include "GridNotifiersImpl.h"
-#include "Log.h"
 #include "Map.h"
-#include "MapInstanced.h"
 #include "MapMgr.h"
 #include "ObjectDefines.h"
 #include "ObjectMgr.h"
-#include "Opcodes.h"
 #include "Pet.h"
 #include "Player.h"
 #include "Transport.h"
-#include "Vehicle.h"
 
 template<class T>
 void HashMapHolder<T>::Insert(T* o)
@@ -117,7 +112,7 @@ namespace PlayerNameMapHolder
 
 } // namespace PlayerNameMapHolder
 
-WorldObject* ObjectAccessor::GetWorldObject(WorldObject const& p, ObjectGuid const guid)
+WorldObject* ObjectAccessor::GetWorldObject(WorldObject const& p, ObjectGuid const& guid)
 {
     switch (guid.GetHigh())
     {
@@ -143,12 +138,12 @@ WorldObject* ObjectAccessor::GetWorldObject(WorldObject const& p, ObjectGuid con
     return nullptr;
 }
 
-Object* ObjectAccessor::GetObjectByTypeMask(WorldObject const& p, ObjectGuid const guid, uint32 typemask)
+Object* ObjectAccessor::GetObjectByTypeMask(WorldObject const& p, ObjectGuid const& guid, uint32 typemask)
 {
     switch (guid.GetHigh())
     {
         case HighGuid::Item:
-            if (typemask & TYPEMASK_ITEM && p.GetTypeId() == TYPEID_PLAYER)
+            if (typemask & TYPEMASK_ITEM && p.IsPlayer())
                 return ((Player const&)p).GetItemByGuid(guid);
             break;
         case HighGuid::Player:
@@ -181,27 +176,27 @@ Object* ObjectAccessor::GetObjectByTypeMask(WorldObject const& p, ObjectGuid con
     return nullptr;
 }
 
-Corpse* ObjectAccessor::GetCorpse(WorldObject const& u, ObjectGuid const guid)
+Corpse* ObjectAccessor::GetCorpse(WorldObject const& u, ObjectGuid const& guid)
 {
     return u.GetMap()->GetCorpse(guid);
 }
 
-GameObject* ObjectAccessor::GetGameObject(WorldObject const& u, ObjectGuid const guid)
+GameObject* ObjectAccessor::GetGameObject(WorldObject const& u, ObjectGuid const& guid)
 {
     return u.GetMap()->GetGameObject(guid);
 }
 
-Transport* ObjectAccessor::GetTransport(WorldObject const& u, ObjectGuid const guid)
+Transport* ObjectAccessor::GetTransport(WorldObject const& u, ObjectGuid const& guid)
 {
     return u.GetMap()->GetTransport(guid);
 }
 
-DynamicObject* ObjectAccessor::GetDynamicObject(WorldObject const& u, ObjectGuid const guid)
+DynamicObject* ObjectAccessor::GetDynamicObject(WorldObject const& u, ObjectGuid const& guid)
 {
     return u.GetMap()->GetDynamicObject(guid);
 }
 
-Unit* ObjectAccessor::GetUnit(WorldObject const& u, ObjectGuid const guid)
+Unit* ObjectAccessor::GetUnit(WorldObject const& u, ObjectGuid const& guid)
 {
     if (guid.IsPlayer())
         return GetPlayer(u, guid);
@@ -212,17 +207,17 @@ Unit* ObjectAccessor::GetUnit(WorldObject const& u, ObjectGuid const guid)
     return GetCreature(u, guid);
 }
 
-Creature* ObjectAccessor::GetCreature(WorldObject const& u, ObjectGuid const guid)
+Creature* ObjectAccessor::GetCreature(WorldObject const& u, ObjectGuid const& guid)
 {
     return u.GetMap()->GetCreature(guid);
 }
 
-Pet* ObjectAccessor::GetPet(WorldObject const& u, ObjectGuid const guid)
+Pet* ObjectAccessor::GetPet(WorldObject const& u, ObjectGuid const& guid)
 {
     return u.GetMap()->GetPet(guid);
 }
 
-Player* ObjectAccessor::GetPlayer(Map const* m, ObjectGuid const guid)
+Player* ObjectAccessor::GetPlayer(Map const* m, ObjectGuid const& guid)
 {
     if (Player * player = HashMapHolder<Player>::Find(guid))
         if (player->IsInWorld() && player->GetMap() == m)
@@ -231,12 +226,12 @@ Player* ObjectAccessor::GetPlayer(Map const* m, ObjectGuid const guid)
     return nullptr;
 }
 
-Player* ObjectAccessor::GetPlayer(WorldObject const& u, ObjectGuid const guid)
+Player* ObjectAccessor::GetPlayer(WorldObject const& u, ObjectGuid const& guid)
 {
     return GetPlayer(u.GetMap(), guid);
 }
 
-Creature* ObjectAccessor::GetCreatureOrPetOrVehicle(WorldObject const& u, ObjectGuid const guid)
+Creature* ObjectAccessor::GetCreatureOrPetOrVehicle(WorldObject const& u, ObjectGuid const& guid)
 {
     if (guid.IsPet())
         return GetPet(u, guid);
@@ -278,6 +273,58 @@ Player* ObjectAccessor::FindPlayerByName(std::string const& name, bool checkInWo
     if (Player* player = PlayerNameMapHolder::Find(name))
         if (!checkInWorld || player->IsInWorld())
             return player;
+
+    return nullptr;
+}
+
+/**
+ * @brief Get a spawned creature by DB `guid` column. MODULE USAGE ONLY - USE IT FOR CUSTOM CONTENT.
+ *
+ * @param uint32 mapId The map id where the creature is spawned.
+ * @param uint64 guid Database guid of the creature we are accessing.
+ */
+Creature* ObjectAccessor::GetSpawnedCreatureByDBGUID(uint32 mapId, uint64 guid)
+{
+    if (Map* map = sMapMgr->FindBaseMap(mapId))
+    {
+        auto bounds = map->GetCreatureBySpawnIdStore().equal_range(guid);
+
+        if (bounds.first == bounds.second)
+        {
+            return nullptr;
+        }
+
+        if (Creature* creature = bounds.first->second)
+        {
+            return creature;
+        }
+    }
+
+    return nullptr;
+}
+
+/**
+ * @brief Get a spawned gameobject by DB `guid` column. MODULE USAGE ONLY - USE IT FOR CUSTOM CONTENT.
+ *
+ * @param uint32 mapId The map id where the gameobject is spawned.
+ * @param uint64 guid Database guid of the gameobject we are accessing.
+ */
+GameObject* ObjectAccessor::GetSpawnedGameObjectByDBGUID(uint32 mapId, uint64 guid)
+{
+    if (Map* map = sMapMgr->FindBaseMap(mapId))
+    {
+        auto bounds = map->GetGameObjectBySpawnIdStore().equal_range(guid);
+
+        if (bounds.first == bounds.second)
+        {
+            return nullptr;
+        }
+
+        if (GameObject* go = bounds.first->second)
+        {
+            return go;
+        }
+    }
 
     return nullptr;
 }

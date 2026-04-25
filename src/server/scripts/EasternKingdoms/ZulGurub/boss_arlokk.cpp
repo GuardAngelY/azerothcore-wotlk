@@ -1,30 +1,22 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-/* ScriptData
-TCName: Boss_Arlokk
-TC%Complete: 95
-TCComment: Wrong cleave and red aura is missing not yet added.
-TCComment: Prowlers moving through wall hopefully mmaps will fix.
-TCComment: Can't test LOS until mmaps.
-TCCategory: Zul'Gurub
-EndScriptData */
-
-#include "ScriptMgr.h"
+#include "CreatureScript.h"
+#include "GameObjectScript.h"
 #include "ScriptedCreature.h"
 #include "SpellInfo.h"
 #include "zulgurub.h"
@@ -86,6 +78,10 @@ Position const PosMoveOnSpawn[1] =
     { -11561.9f, -1627.868f, 41.29941f, 0.0f }
 };
 
+// hack
+float const DamageIncrease = 35.0f;
+float const DamageDecrease = 100.f / (1.f + DamageIncrease / 100.f) - 100.f;
+
 class boss_arlokk : public CreatureScript
 {
 public:
@@ -98,7 +94,7 @@ public:
         void Reset() override
         {
             if (events.IsInPhase(PHASE_TWO))
-                me->HandleStatModifier(UNIT_MOD_DAMAGE_MAINHAND, TOTAL_PCT, 35.0f, false); // hack
+                me->ApplyStatPctModifier(UNIT_MOD_DAMAGE_MAINHAND, TOTAL_PCT, DamageDecrease); // hack
             _Reset();
             _summonCountA = 0;
             _summonCountB = 0;
@@ -115,14 +111,14 @@ public:
             Talk(SAY_DEATH);
         }
 
-        void EnterCombat(Unit* /*who*/) override
+        void JustEngagedWith(Unit* /*who*/) override
         {
-            _EnterCombat();
-            events.ScheduleEvent(EVENT_SHADOW_WORD_PAIN, urand(7000, 9000), 0, PHASE_ONE);
-            events.ScheduleEvent(EVENT_GOUGE, urand(12000, 15000), 0, PHASE_ONE);
-            events.ScheduleEvent(EVENT_SUMMON_PROWLERS, 6000, 0, PHASE_ALL);
-            events.ScheduleEvent(EVENT_MARK_OF_ARLOKK, urand(9000, 11000), 0, PHASE_ALL);
-            events.ScheduleEvent(EVENT_TRANSFORM, 30000, 0, PHASE_ONE);
+            _JustEngagedWith();
+            events.ScheduleEvent(EVENT_SHADOW_WORD_PAIN, 7s, 9s, 0, PHASE_ONE);
+            events.ScheduleEvent(EVENT_GOUGE, 12s, 15s, 0, PHASE_ONE);
+            events.ScheduleEvent(EVENT_SUMMON_PROWLERS, 6s, 0, PHASE_ALL);
+            events.ScheduleEvent(EVENT_MARK_OF_ARLOKK, 9s, 11s, 0, PHASE_ALL);
+            events.ScheduleEvent(EVENT_TRANSFORM, 30s, 0, PHASE_ONE);
             Talk(SAY_AGGRO);
 
             // Sets up list of Panther spawners to cast on
@@ -189,7 +185,7 @@ public:
                 {
                     case EVENT_SHADOW_WORD_PAIN:
                         DoCastVictim(SPELL_SHADOW_WORD_PAIN, true);
-                        events.ScheduleEvent(EVENT_SHADOW_WORD_PAIN, urand(5000, 7000), 0, PHASE_ONE);
+                        events.ScheduleEvent(EVENT_SHADOW_WORD_PAIN, 5s, 7s, 0, PHASE_ONE);
                         break;
                     case EVENT_GOUGE:
                         DoCastVictim(SPELL_GOUGE, true);
@@ -211,7 +207,7 @@ public:
                                 ++_summonCountB;
                             }
                         }
-                        events.ScheduleEvent(EVENT_SUMMON_PROWLERS, 6000, 0, PHASE_ALL);
+                        events.ScheduleEvent(EVENT_SUMMON_PROWLERS, 6s, 0, PHASE_ALL);
                         break;
                     case EVENT_MARK_OF_ARLOKK:
                         {
@@ -223,7 +219,7 @@ public:
                                 DoCast(target, SPELL_MARK_OF_ARLOKK, true);
                                 Talk(SAY_FEAST_PROWLER, target);
                             }
-                            events.ScheduleEvent(EVENT_MARK_OF_ARLOKK, urand(120000, 130000));
+                            events.ScheduleEvent(EVENT_MARK_OF_ARLOKK, 120s, 130s);
                             break;
                         }
                     case EVENT_TRANSFORM:
@@ -237,19 +233,19 @@ public:
                             me->SetUnitFlag(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
                             DoCastSelf(SPELL_VANISH_VISUAL);
                             DoCastSelf(SPELL_VANISH);
-                            events.ScheduleEvent(EVENT_VANISH, 1000, 0, PHASE_ONE);
+                            events.ScheduleEvent(EVENT_VANISH, 1s, 0, PHASE_ONE);
                             break;
                         }
                     case EVENT_VANISH:
                         DoCastSelf(SPELL_SUPER_INVIS);
                         me->SetWalk(false);
                         me->GetMotionMaster()->MovePoint(0, frand(-11551.0f, -11508.0f), frand(-1638.0f, -1617.0f), me->GetPositionZ());
-                        events.ScheduleEvent(EVENT_VANISH_2, 9000, 0, PHASE_ONE);
+                        events.ScheduleEvent(EVENT_VANISH_2, 9s, 0, PHASE_ONE);
                         break;
                     case EVENT_VANISH_2:
                         DoCastSelf(SPELL_VANISH);
                         DoCastSelf(SPELL_SUPER_INVIS);
-                        events.ScheduleEvent(EVENT_VISIBLE, urand(41000, 47000), 0, PHASE_ONE);
+                        events.ScheduleEvent(EVENT_VISIBLE, 41s, 47s, 0, PHASE_ONE);
                         break;
                     case EVENT_VISIBLE:
                         me->SetReactState(REACT_AGGRESSIVE);
@@ -258,14 +254,14 @@ public:
                             AttackStart(target);
                         me->RemoveAura(SPELL_SUPER_INVIS);
                         me->RemoveAura(SPELL_VANISH);
-                        events.ScheduleEvent(EVENT_RAVAGE, urand(10000, 14000), 0, PHASE_TWO);
-                        events.ScheduleEvent(EVENT_TRANSFORM_BACK, urand(30000, 40000), 0, PHASE_TWO);
+                        events.ScheduleEvent(EVENT_RAVAGE, 10s, 14s, 0, PHASE_TWO);
+                        events.ScheduleEvent(EVENT_TRANSFORM_BACK, 30s, 40s, 0, PHASE_TWO);
                         events.SetPhase(PHASE_TWO);
-                        me->HandleStatModifier(UNIT_MOD_DAMAGE_MAINHAND, TOTAL_PCT, 35.0f, true); // hack
+                        me->ApplyStatPctModifier(UNIT_MOD_DAMAGE_MAINHAND, TOTAL_PCT, DamageIncrease); // hack
                         break;
                     case EVENT_RAVAGE:
                         DoCastVictim(SPELL_RAVAGE, true);
-                        events.ScheduleEvent(EVENT_RAVAGE, urand(10000, 14000), 0, PHASE_TWO);
+                        events.ScheduleEvent(EVENT_RAVAGE, 10s, 14s, 0, PHASE_TWO);
                         break;
                     case EVENT_TRANSFORM_BACK:
                         {
@@ -273,10 +269,10 @@ public:
                             DoCast(me, SPELL_VANISH_VISUAL);
                             me->SetUInt32Value(UNIT_VIRTUAL_ITEM_SLOT_ID + 0, uint32(WEAPON_DAGGER));
                             me->SetUInt32Value(UNIT_VIRTUAL_ITEM_SLOT_ID + 1, uint32(WEAPON_DAGGER));
-                            me->HandleStatModifier(UNIT_MOD_DAMAGE_MAINHAND, TOTAL_PCT, 35.0f, false); // hack
-                            events.ScheduleEvent(EVENT_SHADOW_WORD_PAIN, urand(4000, 7000), 0, PHASE_ONE);
-                            events.ScheduleEvent(EVENT_GOUGE, urand(12000, 15000), 0, PHASE_ONE);
-                            events.ScheduleEvent(EVENT_TRANSFORM, 30000, 0, PHASE_ONE);
+                            me->ApplyStatPctModifier(UNIT_MOD_DAMAGE_MAINHAND, TOTAL_PCT, DamageDecrease); // hack
+                            events.ScheduleEvent(EVENT_SHADOW_WORD_PAIN, 4s, 7s, 0, PHASE_ONE);
+                            events.ScheduleEvent(EVENT_GOUGE, 12s, 15s, 0, PHASE_ONE);
+                            events.ScheduleEvent(EVENT_TRANSFORM, 30s, 0, PHASE_ONE);
                             events.SetPhase(PHASE_ONE);
                             break;
                         }
@@ -338,10 +334,10 @@ public:
 
             if (Unit* arlokk = ObjectAccessor::GetUnit(*me, _instance->GetGuidData(NPC_ARLOKK)))
                 me->GetMotionMaster()->MovePoint(0, arlokk->GetPositionX(), arlokk->GetPositionY(), arlokk->GetPositionZ());
-            _events.ScheduleEvent(EVENT_ATTACK, 6000);
+            _events.ScheduleEvent(EVENT_ATTACK, 6s);
         }
 
-        void EnterCombat(Unit* /*who*/) override
+        void JustEngagedWith(Unit* /*who*/) override
         {
             me->GetMotionMaster()->Clear(false);
             me->RemoveAura(SPELL_SNEAK_RANK_1_1);
@@ -363,7 +359,7 @@ public:
                 if (arlokk->IsAlive())
                     arlokk->GetAI()->SetData(_sideData, 0);
             }
-            me->DespawnOrUnsummon(4000);
+            me->DespawnOrUnsummon(4s);
         }
 
         void UpdateAI(uint32 diff) override

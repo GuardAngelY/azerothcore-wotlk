@@ -1,31 +1,28 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "DBCStores.h"
-#include "Common.h"
+#include "M2Stores.h"
 #include "Containers.h"
+#include "DBCStores.h"
 #include "Log.h"
 #include "M2Structure.h"
-#include "M2Stores.h"
 #include "World.h"
 #include <boost/filesystem/path.hpp>
 #include <fstream>
-#include <iostream>
-#include <iomanip>
 
 typedef std::vector<FlyByCamera> FlyByCameraCollection;
 std::unordered_map<uint32, FlyByCameraCollection> sFlyByCameraStore;
@@ -206,7 +203,7 @@ void LoadM2Cameras(std::string const& dataPath)
         // Reject if not at least the size of the header
         if (static_cast<uint32>(fileSize) < sizeof(M2Header))
         {
-            LOG_ERROR("server.loading", "Camera file %s is damaged. File is smaller than header size", filename.string().c_str());
+            LOG_ERROR("server.loading", "Camera file {} is damaged. File is smaller than header size", filename.string());
             m2file.close();
             continue;
         }
@@ -220,7 +217,7 @@ void LoadM2Cameras(std::string const& dataPath)
         // Check file has correct magic (MD20)
         if (strcmp(fileCheck, "MD20"))
         {
-            LOG_ERROR("server.loading", "Camera file %s is damaged. File identifier not found", filename.string().c_str());
+            LOG_ERROR("server.loading", "Camera file {} is damaged. File identifier not found", filename.string());
             m2file.close();
             continue;
         }
@@ -240,14 +237,14 @@ void LoadM2Cameras(std::string const& dataPath)
 
         if (header->ofsCameras + sizeof(M2Camera) > static_cast<uint32>(fileSize))
         {
-            LOG_ERROR("server.loading", "Camera file %s is damaged. Camera references position beyond file end", filename.string().c_str());
+            LOG_ERROR("server.loading", "Camera file {} is damaged. Camera references position beyond file end", filename.string());
             continue;
         }
 
         // Get camera(s) - Main header, then dump them.
         M2Camera const* cam = reinterpret_cast<M2Camera const*>(buffer.data() + header->ofsCameras);
         if (!readCamera(cam, fileSize, header, dbcentry))
-            LOG_ERROR("server.loading", "Camera file %s is damaged. Camera references position beyond file end", filename.string().c_str());
+            LOG_ERROR("server.loading", "Camera file {} is damaged. Camera references position beyond file end", filename.string());
     }
 
     LOG_INFO("server.loading", ">> Loaded {} Cinematic Waypoint Sets in {} ms", (uint32)sFlyByCameraStore.size(), GetMSTimeDiffToNow(oldMSTime));

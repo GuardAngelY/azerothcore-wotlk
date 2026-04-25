@@ -1,14 +1,14 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
@@ -22,11 +22,8 @@
 #include "ObjectMgr.h"
 #include "Optional.h"
 #include "Player.h"
-#include "World.h"
-#include "WorldPacket.h"
 #include <set>
 #include <unordered_map>
-#include <unordered_set>
 
 class Item;
 
@@ -161,7 +158,7 @@ enum GuildEvents
     GE_RANK_DELETED                     = 11,
     GE_SIGNED_ON                        = 12,
     GE_SIGNED_OFF                       = 13,
-    GE_GUILDBANKBAGSLOTS_CHANGED        = 14,   /// TODO: Sent when items are moved in gbank - all players with bank open will send tab query
+    GE_GUILDBANKBAGSLOTS_CHANGED        = 14,   /// @todo: Sent when items are moved in gbank - all players with bank open will send tab query
     GE_BANK_TAB_PURCHASED               = 15,
     GE_BANK_TAB_UPDATED                 = 16,
     GE_BANK_MONEY_SET                   = 17,
@@ -393,7 +390,7 @@ public: // pussywizard: public class Member
     }
     inline Member* GetMember(std::string_view name)
     {
-        for (auto & m_member : m_members)
+        for (auto& m_member : m_members)
             if (m_member.second.GetName() == name)
                 return &m_member.second;
 
@@ -702,7 +699,7 @@ public:
     void HandleSetEmblem(WorldSession* session, const EmblemInfo& emblemInfo);
     void HandleSetLeader(WorldSession* session, std::string_view name);
     void HandleSetBankTabInfo(WorldSession* session, uint8 tabId, std::string_view name, std::string_view icon);
-    void HandleSetMemberNote(WorldSession* session, std::string_view name, std::string_view note, bool officer);
+    void HandleSetMemberNote(WorldSession* session, std::string_view name, std::string_view note, bool isPublic);
     void HandleSetRankInfo(WorldSession* session, uint8 rankId, std::string_view name, uint32 rights, uint32 moneyPerDay, std::array<GuildBankRightsAndSlots, GUILD_BANK_MAX_TABS> const& rightsAndSlots);
     void HandleBuyBankTab(WorldSession* session, uint8 tabId);
     void HandleInviteMember(WorldSession* session, std::string const& name);

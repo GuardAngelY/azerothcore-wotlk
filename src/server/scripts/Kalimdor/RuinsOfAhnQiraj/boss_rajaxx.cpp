@@ -1,26 +1,27 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "SmartAI.h"
-#include "ScriptMgr.h"
+#include "CreatureScript.h"
 #include "ScriptedCreature.h"
 #include "ScriptedEscortAI.h"
 #include "ScriptedGossip.h"
+#include "SmartAI.h"
 #include "SpellScript.h"
+#include "SpellScriptLoader.h"
 #include "ruins_of_ahnqiraj.h"
 
 enum Yells
@@ -86,9 +87,9 @@ struct boss_rajaxx : public BossAI
         });
     }
 
-    void EnterCombat(Unit* /*victim*/) override
+    void JustEngagedWith(Unit* /*who*/) override
     {
-        _EnterCombat();
+        _JustEngagedWith();
         events.ScheduleEvent(EVENT_DISARM, 10s);
         events.ScheduleEvent(EVENT_THUNDERCRASH, 12s);
     }
@@ -132,9 +133,9 @@ class spell_rajaxx_thundercrash : public SpellScript
     void HandleDamageCalc(SpellEffIndex /*effIndex*/)
     {
         int32 damage = GetHitUnit()->GetHealth() / 2;
-        if (damage < 200)
+        if (damage < 100)
         {
-            damage = 200;
+            damage = 100;
         }
 
         SetHitDamage(damage);
@@ -208,7 +209,7 @@ struct npc_general_andorov : public npc_escortAI
         _initialAttackTimer = 5 * IN_MILLISECONDS;
         _paused = false;
 
-        Start(false, true);
+        Start(false);
 
         me->SetImmuneToNPC(true);
         me->SetUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
@@ -219,13 +220,14 @@ struct npc_general_andorov : public npc_escortAI
         _summons.Summon(summon);
     }
 
-    void EnterCombat(Unit* /*who*/) override
+    void JustEngagedWith(Unit* /*who*/) override
     {
-        events.ScheduleEvent(EVENT_BASH, urand(8, 11) * IN_MILLISECONDS);
-        events.ScheduleEvent(EVENT_COMMAND_AURA, urand(1, 3)  * IN_MILLISECONDS);
-        events.ScheduleEvent(EVENT_STRIKE, urand(2, 5)  * IN_MILLISECONDS);
+        events.ScheduleEvent(EVENT_BASH, 8s, 11s);
+        events.ScheduleEvent(EVENT_COMMAND_AURA, 1s, 3s);
+        events.ScheduleEvent(EVENT_STRIKE, 2s, 5s);
     }
 
+    using CreatureAI::WaypointReached;
     void WaypointReached(uint32 waypointId) override
     {
         switch (waypointId)
@@ -348,15 +350,15 @@ struct npc_general_andorov : public npc_escortAI
             {
                 case EVENT_BASH:
                     DoCastVictim(SPELL_BASH);
-                    events.ScheduleEvent(EVENT_BASH, urand(25, 38) * IN_MILLISECONDS);
+                    events.ScheduleEvent(EVENT_BASH, 25s, 38s);
                     break;
                 case EVENT_COMMAND_AURA:
                     DoCastSelf(SPELL_AURA_OF_COMMAND, true);
-                    events.ScheduleEvent(EVENT_COMMAND_AURA, urand(10, 20) * IN_MILLISECONDS);
+                    events.ScheduleEvent(EVENT_COMMAND_AURA, 10s, 20s);
                     break;
                 case EVENT_STRIKE:
                     DoCastVictim(SPELL_STRIKE);
-                    events.ScheduleEvent(EVENT_STRIKE, urand(4, 6) * IN_MILLISECONDS);
+                    events.ScheduleEvent(EVENT_STRIKE, 4s, 6s);
                     break;
                 default:
                     break;

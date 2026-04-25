@@ -1,33 +1,22 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-/* ScriptData
-SDName: Hinterlands
-SD%Complete: 100
-SDComment: Quest support: 2742
-SDCategory: The Hinterlands
-EndScriptData */
-
-/* ContentData
-npc_rinji
-EndContentData */
-
+#include "CreatureScript.h"
 #include "Player.h"
-#include "ScriptMgr.h"
 #include "ScriptedCreature.h"
 #include "ScriptedEscortAI.h"
 
@@ -49,18 +38,18 @@ enum Rinji
     GO_RINJI_CAGE           = 142036
 };
 
-struct Location
+struct LocationXYZ
 {
-    float posX, posY, posZ;
+    float x, y, z;
 };
 
-Location AmbushSpawn[] =
+LocationXYZ AmbushSpawn[] =
 {
     { 191.296204f, -2839.329346f, 107.388f },
     { 70.972466f,  -2848.674805f, 109.459f }
 };
 
-Location AmbushMoveTo[] =
+LocationXYZ AmbushMoveTo[] =
 {
     { 166.630386f, -2824.780273f, 108.153f },
     { 70.886589f,  -2874.335449f, 116.675f }
@@ -77,7 +66,7 @@ public:
         {
             _IsByOutrunner = false;
             spawnId = 0;
-            me->SetUnitFlag(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_DISABLE_MOVE);
+            me->SetImmuneToAll(true);
         }
 
         void Reset() override
@@ -90,11 +79,12 @@ public:
         {
             _IsByOutrunner = false;
             spawnId = 0;
+            me->SetImmuneToAll(true);
 
             npc_escortAI::JustRespawned();
         }
 
-        void EnterCombat(Unit* who) override
+        void JustEngagedWith(Unit* who) override
         {
             if (HasEscortState(STATE_ESCORT_ESCORTING))
             {
@@ -118,12 +108,12 @@ public:
             if (!_first)
                 spawnId = 1;
 
-            me->SummonCreature(NPC_RANGER, AmbushSpawn[spawnId].posX, AmbushSpawn[spawnId].posY, AmbushSpawn[spawnId].posZ, 0.0f,
+            me->SummonCreature(NPC_RANGER, AmbushSpawn[spawnId].x, AmbushSpawn[spawnId].y, AmbushSpawn[spawnId].z, 0.0f,
                                TEMPSUMMON_TIMED_OR_CORPSE_DESPAWN, 60000);
 
             for (int i = 0; i < 2; ++i)
             {
-                me->SummonCreature(NPC_OUTRUNNER, AmbushSpawn[spawnId].posX, AmbushSpawn[spawnId].posY, AmbushSpawn[spawnId].posZ, 0.0f,
+                me->SummonCreature(NPC_OUTRUNNER, AmbushSpawn[spawnId].x, AmbushSpawn[spawnId].y, AmbushSpawn[spawnId].z, 0.0f,
                                    TEMPSUMMON_TIMED_OR_CORPSE_DESPAWN, 60000);
             }
         }
@@ -131,21 +121,23 @@ public:
         void JustSummoned(Creature* summoned) override
         {
             summoned->SetWalk(false);
-            summoned->GetMotionMaster()->MovePoint(0, AmbushMoveTo[spawnId].posX, AmbushMoveTo[spawnId].posY, AmbushMoveTo[spawnId].posZ);
+            summoned->GetMotionMaster()->MovePoint(0, AmbushMoveTo[spawnId].x, AmbushMoveTo[spawnId].y, AmbushMoveTo[spawnId].z);
         }
 
         void sQuestAccept(Player* player, Quest const* quest) override
         {
-            me->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_DISABLE_MOVE);
+            me->SetImmuneToAll(false);
             if (quest->GetQuestId() == QUEST_RINJI_TRAPPED)
             {
                 if (GameObject* go = me->FindNearestGameObject(GO_RINJI_CAGE, INTERACTION_DISTANCE))
                     go->UseDoorOrButton();
 
-                npc_escortAI::Start(false, false, player->GetGUID(), quest);
+                me->SetWalk(true);
+                Start(false, player->GetGUID(), quest);
             }
         }
 
+        using CreatureAI::WaypointReached;
         void WaypointReached(uint32 waypointId) override
         {
             Player* player = GetPlayerForEscort();
@@ -166,7 +158,7 @@ public:
                 case 17:
                     Talk(SAY_RIN_COMPLETE, player);
                     player->GroupEventHappens(QUEST_RINJI_TRAPPED, me);
-                    SetRun();
+                    me->SetWalk(false);
                     postEventCount = 1;
                     break;
             }

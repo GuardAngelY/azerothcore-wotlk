@@ -1,14 +1,14 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
@@ -22,16 +22,21 @@
 #include "Util.h"
 #include <boost/algorithm/string/join.hpp>
 #include <boost/iostreams/copy.hpp>
-#include <boost/process/args.hpp>
-#include <boost/process/child.hpp>
-#include <boost/process/env.hpp>
-#include <boost/process/exe.hpp>
-#include <boost/process/io.hpp>
-#include <boost/process/pipe.hpp>
-#include <boost/process/search_path.hpp>
 #include <filesystem>
 
+#if BOOST_VERSION < 108800
+#include <boost/process.hpp>
 using namespace boost::process;
+#else
+#include <boost/process/v1/args.hpp>
+#include <boost/process/v1/child.hpp>
+#include <boost/process/v1/env.hpp>
+#include <boost/process/v1/exe.hpp>
+#include <boost/process/v1/io.hpp>
+#include <boost/process/v1/search_path.hpp>
+using namespace boost::process::v1;
+#endif
+
 using namespace boost::iostreams;
 
 namespace Acore
@@ -72,8 +77,22 @@ namespace Acore
         std::string const& logger, std::string const& input,
         bool secure)
     {
+#if AC_COMPILER == AC_COMPILER_MICROSOFT
+#pragma warning(push)
+#pragma warning(disable:4297)
+/*
+  Silence warning with boost 1.83
+    boost/process/pipe.hpp(132,5): warning C4297: 'boost::process::basic_pipebuf<char,std::char_traits<char>>::~basic_pipebuf': function assumed not to throw an exception but does
+    boost/process/pipe.hpp(132,5): message : destructor or deallocator has a (possibly implicit) non-throwing exception specification
+    boost/process/pipe.hpp(124,6): message : while compiling class template member function 'boost::process::basic_pipebuf<char,std::char_traits<char>>::~basic_pipebuf(void)'
+    boost/process/pipe.hpp(304,42): message : see reference to class template instantiation 'boost::process::basic_pipebuf<char,std::char_traits<char>>' being compiled
+*/
+#endif
         ipstream outStream;
         ipstream errStream;
+#if AC_COMPILER == AC_COMPILER_MICROSOFT
+#pragma warning(pop)
+#endif
 
         if (!secure)
         {
@@ -110,7 +129,11 @@ namespace Acore
                     exe = std::filesystem::absolute(executable).string(),
                     args = argsVector,
                     env = environment(boost::this_process::environment()),
+#if BOOST_VERSION < 108800
                     std_in = boost::process::close,
+#else
+                    std_in = boost::process::v1::close,
+#endif
                     std_out = outStream,
                     std_err = errStream
                 };

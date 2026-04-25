@@ -1,22 +1,22 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "CreatureScript.h"
 #include "Player.h"
-#include "ScriptMgr.h"
 #include "ScriptedCreature.h"
 #include "SpellInfo.h"
 #include "onyxias_lair.h"
@@ -138,16 +138,16 @@ public:
         switch (ph)
         {
             case PHASE_GROUNDED:
-                events.ScheduleEvent(EVENT_SPELL_WINGBUFFET, urand(10000, 20000));
-                events.ScheduleEvent(EVENT_SPELL_FLAMEBREATH, urand(10000, 20000));
-                events.ScheduleEvent(EVENT_SPELL_TAILSWEEP, urand(15000, 20000));
-                events.ScheduleEvent(EVENT_SPELL_CLEAVE, urand(2000, 5000));
+                events.ScheduleEvent(EVENT_SPELL_WINGBUFFET, 10s, 20s);
+                events.ScheduleEvent(EVENT_SPELL_FLAMEBREATH, 10s, 20s);
+                events.ScheduleEvent(EVENT_SPELL_TAILSWEEP, 15s, 20s);
+                events.ScheduleEvent(EVENT_SPELL_CLEAVE, 2s, 5s);
                 break;
             case PHASE_AIRPHASE:
-                events.ScheduleEvent(EVENT_START_PHASE_2, 0);
+                events.ScheduleEvent(EVENT_START_PHASE_2, 0ms);
                 break;
             case PHASE_LANDED:
-                events.ScheduleEvent(EVENT_START_PHASE_3, 5000);
+                events.ScheduleEvent(EVENT_START_PHASE_3, 5s);
                 break;
         }
     }
@@ -177,14 +177,14 @@ public:
         }
     }
 
-    void EnterCombat(Unit* who) override
+    void JustEngagedWith(Unit* who) override
     {
         Talk(SAY_AGGRO);
         SetPhase(PHASE_GROUNDED);
 
         instance->DoStopTimedAchievement(ACHIEVEMENT_TIMED_TYPE_EVENT, ACHIEV_TIMED_START_EVENT); // just in case at reset some players already left the instance
         instance->DoStartTimedAchievement(ACHIEVEMENT_TIMED_TYPE_EVENT, ACHIEV_TIMED_START_EVENT);
-        BossAI::EnterCombat(who);
+        BossAI::JustEngagedWith(who);
 
         me->SummonCreature(NPC_ONYXIAN_LAIR_GUARD, -167.837936f, -200.549332f, -66.343231f, 5.598287f, TEMPSUMMON_MANUAL_DESPAWN);
     }
@@ -211,7 +211,7 @@ public:
             return;
         }
 
-        if (summon->GetEntry() == NPC_ONYXIAN_LAIR_GUARD && Phase != PHASE_LANDED)
+        if (summon->GetEntry() == NPC_ONYXIAN_LAIR_GUARD && Phase < PHASE_AIRPHASE)
         {
             return;
         }
@@ -221,8 +221,6 @@ public:
             summon->AI()->AttackStart(target);
             DoZoneInCombat(summon);
         }
-
-        summons.Summon(summon);
     }
 
     void MovementInform(uint32 type, uint32 id) override
@@ -239,7 +237,7 @@ public:
                 me->SetFacingTo(OnyxiaMoveData[id].o);
                 me->SetSpeed(MOVE_RUN, 1.6f, false);
                 CurrentWP = id;
-                events.ScheduleEvent(EVENT_SPELL_FIREBALL_FIRST, 1000);
+                events.ScheduleEvent(EVENT_SPELL_FIREBALL_FIRST, 1s);
             }
         }
         else
@@ -248,21 +246,21 @@ public:
             {
                 case 10:
                     me->SetFacingTo(OnyxiaMoveData[0].o);
-                    events.ScheduleEvent(EVENT_LIFTOFF, 0);
+                    events.ScheduleEvent(EVENT_LIFTOFF, 0ms);
                     break;
                 case 11:
                     me->SetFacingTo(OnyxiaMoveData[1].o);
-                    events.ScheduleEvent(EVENT_FLY_S_TO_N, 0);
+                    events.ScheduleEvent(EVENT_FLY_S_TO_N, 0ms);
                     break;
                 case 12:
                     me->SetFacingTo(OnyxiaMoveData[1].o);
-                    events.ScheduleEvent(EVENT_LAND, 0);
+                    events.ScheduleEvent(EVENT_LAND, 0ms);
                     break;
                 case 13:
                     me->SetCanFly(false);
                     me->SetDisableGravity(false);
                     me->SetSpeed(MOVE_RUN, me->GetCreatureTemplate()->speed_run, false);
-                    events.ScheduleEvent(EVENT_PHASE_3_ATTACK, 0);
+                    events.ScheduleEvent(EVENT_PHASE_3_ATTACK, 0ms);
                     break;
             }
         }
@@ -328,25 +326,25 @@ public:
             case EVENT_SPELL_WINGBUFFET:
             {
                 DoCastAOE(SPELL_WINGBUFFET);
-                events.RepeatEvent(urand(15000, 30000));
+                events.Repeat(15s, 30s);
                 break;
             }
             case EVENT_SPELL_FLAMEBREATH:
             {
                 DoCastAOE(SPELL_FLAMEBREATH);
-                events.RepeatEvent(urand(10000, 20000));
+                events.Repeat(10s, 20s);
                 break;
             }
             case EVENT_SPELL_TAILSWEEP:
             {
                 DoCastAOE(SPELL_TAILSWEEP);
-                events.RepeatEvent(urand(15000, 20000));
+                events.Repeat(15s, 20s);
                 break;
             }
             case EVENT_SPELL_CLEAVE:
             {
                 DoCastVictim(SPELL_CLEAVE);
-                events.RepeatEvent(urand(2000, 5000));
+                events.Repeat(2s, 5s);
                 break;
             }
             case EVENT_START_PHASE_2:
@@ -371,7 +369,7 @@ public:
                 me->GetMotionMaster()->MoveTakeoff(11, OnyxiaMoveData[1].x + 1.0f, OnyxiaMoveData[1].y, OnyxiaMoveData[1].z, 12.0f);
                 bManyWhelpsAvailable = true;
 
-                events.RescheduleEvent(EVENT_END_MANY_WHELPS_TIME, 10000);
+                events.RescheduleEvent(EVENT_END_MANY_WHELPS_TIME, 10s);
                 break;
             }
             case EVENT_END_MANY_WHELPS_TIME:
@@ -383,20 +381,20 @@ public:
                 me->GetMotionMaster()->MovePoint(5, OnyxiaMoveData[5].x, OnyxiaMoveData[5].y, OnyxiaMoveData[5].z);
 
                 whelpSpam = true;
-                events.ScheduleEvent(EVENT_WHELP_SPAM, 90000);
-                events.ScheduleEvent(EVENT_SUMMON_LAIR_GUARD, 30000);
+                events.ScheduleEvent(EVENT_WHELP_SPAM, 90s);
+                events.ScheduleEvent(EVENT_SUMMON_LAIR_GUARD, 30s);
                 break;
             }
             case EVENT_SUMMON_LAIR_GUARD:
             {
                 me->CastSpell(-101.654f, -214.491f, -80.70f, SPELL_SUMMON_LAIR_GUARD, true);
-                events.RepeatEvent(30000);
+                events.Repeat(30s);
                 break;
             }
             case EVENT_WHELP_SPAM:
             {
                 whelpSpam = true;
-                events.RepeatEvent(90000);
+                events.Repeat(90s);
                 break;
             }
             case EVENT_LAND:
@@ -415,7 +413,7 @@ public:
                     DoCast(v, SPELL_FIREBALL);
                 }
 
-                events.ScheduleEvent(EVENT_SPELL_FIREBALL_SECOND, 4000);
+                events.ScheduleEvent(EVENT_SPELL_FIREBALL_SECOND, 4s);
                 break;
             }
             case EVENT_SPELL_FIREBALL_SECOND:
@@ -429,15 +427,15 @@ public:
                 uint8 rand = urand(0, 99);
                 if (rand < 33)
                 {
-                    events.ScheduleEvent(EVENT_PHASE_2_STEP_CW, 4000);
+                    events.ScheduleEvent(EVENT_PHASE_2_STEP_CW, 4s);
                 }
                 else if (rand < 66)
                 {
-                    events.ScheduleEvent(EVENT_PHASE_2_STEP_ACW, 4000);
+                    events.ScheduleEvent(EVENT_PHASE_2_STEP_ACW, 4s);
                 }
                 else
                 {
-                    events.ScheduleEvent(EVENT_PHASE_2_STEP_ACROSS, 4000);
+                    events.ScheduleEvent(EVENT_PHASE_2_STEP_ACROSS, 4s);
                 }
                 break;
             }
@@ -466,7 +464,7 @@ public:
                 Talk(EMOTE_BREATH);
                 me->SetFacingTo(OnyxiaMoveData[CurrentWP].o);
                 DoCastAOE(OnyxiaMoveData[CurrentWP].spellId);
-                events.ScheduleEvent(EVENT_SPELL_BREATH, 8250);
+                events.ScheduleEvent(EVENT_SPELL_BREATH, 8250ms);
                 break;
             }
             case EVENT_SPELL_BREATH:
@@ -493,20 +491,20 @@ public:
 
                 DoCastAOE(SPELL_BELLOWINGROAR);
 
-                events.ScheduleEvent(EVENT_ERUPTION, 0);
-                events.ScheduleEvent(EVENT_SPELL_WINGBUFFET, urand(10000, 20000));
-                events.ScheduleEvent(EVENT_SPELL_FLAMEBREATH, urand(10000, 20000));
-                events.ScheduleEvent(EVENT_SPELL_TAILSWEEP, urand(15000, 20000));
-                events.ScheduleEvent(EVENT_SPELL_CLEAVE, urand(2000, 5000));
-                events.ScheduleEvent(EVENT_SPELL_BELLOWINGROAR, 15000);
-                events.ScheduleEvent(EVENT_SUMMON_WHELP, 10000);
+                events.ScheduleEvent(EVENT_ERUPTION, 0ms);
+                events.ScheduleEvent(EVENT_SPELL_WINGBUFFET, 10s, 20s);
+                events.ScheduleEvent(EVENT_SPELL_FLAMEBREATH, 10s, 20s);
+                events.ScheduleEvent(EVENT_SPELL_TAILSWEEP, 15s, 20s);
+                events.ScheduleEvent(EVENT_SPELL_CLEAVE, 2s, 5s);
+                events.ScheduleEvent(EVENT_SPELL_BELLOWINGROAR, 15s);
+                events.ScheduleEvent(EVENT_SUMMON_WHELP, 10s);
                 break;
             }
             case EVENT_SPELL_BELLOWINGROAR:
             {
                 DoCastAOE(SPELL_BELLOWINGROAR);
-                events.RepeatEvent(22000);
-                events.ScheduleEvent(EVENT_ERUPTION, 0);
+                events.Repeat(22s);
+                events.ScheduleEvent(EVENT_ERUPTION, 0ms);
                 break;
             }
             case EVENT_ERUPTION:
@@ -523,7 +521,7 @@ public:
                 float dist  = rand_norm() * 4.0f;
                 me->CastSpell(-33.18f + cos(angle) * dist, -258.80f + std::sin(angle) * dist, -89.0f, 17646, true);
                 me->CastSpell(-32.535f + cos(angle) * dist, -170.190f + std::sin(angle) * dist, -89.0f, 17646, true);
-                events.RepeatEvent(30000);
+                events.Repeat(30s);
                 break;
             }
         }
@@ -554,11 +552,11 @@ public:
 
     EventMap events;
 
-    void EnterCombat(Unit* /*who*/) override
+    void JustEngagedWith(Unit* /*who*/) override
     {
         events.Reset();
-        events.ScheduleEvent(EVENT_OLG_SPELL_BLASTNOVA, 15000);
-        events.ScheduleEvent(EVENT_OLG_SPELL_IGNITEWEAPON, 10000);
+        events.ScheduleEvent(EVENT_OLG_SPELL_BLASTNOVA, 15s);
+        events.ScheduleEvent(EVENT_OLG_SPELL_IGNITEWEAPON, 10s);
     }
 
     void UpdateAI(uint32 diff) override
@@ -579,17 +577,17 @@ public:
         {
             case EVENT_OLG_SPELL_BLASTNOVA:
                 DoCastAOE(SPELL_OLG_BLASTNOVA);
-                events.RepeatEvent(15000);
+                events.Repeat(15s);
                 break;
             case EVENT_OLG_SPELL_IGNITEWEAPON:
                 if (me->HasUnitFlag(UNIT_FLAG_DISARMED))
                 {
-                    events.RepeatEvent(5000);
+                    events.Repeat(5s);
                 }
                 else
                 {
                     DoCastSelf(SPELL_OLG_IGNITEWEAPON);
-                    events.RepeatEvent(urand(18000, 21000));
+                    events.Repeat(18s, 21s);
                 }
                 break;
         }

@@ -1,14 +1,14 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
@@ -20,10 +20,15 @@
 #include "Creature.h"
 #include "DBCStores.h"
 #include "GridNotifiers.h"
-#include "GridNotifiersImpl.h"
 #include "ObjectAccessor.h"
 #include "SpellMgr.h"
 #include "Totem.h"
+
+/// @todo: this import is not necessary for compilation and marked as unused by the IDE
+//  however, for some reasons removing it would cause a damn linking issue
+//  there is probably some underlying problem with imports which should properly addressed
+//  see: https://github.com/azerothcore/azerothcore-wotlk/issues/9766
+#include "GridNotifiersImpl.h"
 
 int32 TotemAI::Permissible(Creature const* creature)
 {
@@ -99,7 +104,7 @@ void TotemAI::UpdateAI(uint32 /*diff*/)
         victim = nullptr;
         Acore::NearestAttackableUnitInObjectRangeCheck u_check(me, me, max_range);
         Acore::UnitLastSearcher<Acore::NearestAttackableUnitInObjectRangeCheck> checker(me, victim, u_check);
-        Cell::VisitAllObjects(me, checker, max_range);
+        Cell::VisitObjects(me, checker, max_range);
     }
 
     if (!victim && me->GetCharmerOrOwnerOrSelf()->IsInCombat())
@@ -124,12 +129,12 @@ void TotemAI::UpdateAI(uint32 /*diff*/)
 void TotemAI::AttackStart(Unit* /*victim*/)
 {
     // Sentry totem sends ping on attack
-    if (me->GetEntry() == SENTRY_TOTEM_ENTRY && me->GetOwner()->GetTypeId() == TYPEID_PLAYER)
+    if (me->GetEntry() == SENTRY_TOTEM_ENTRY && me->GetOwner()->IsPlayer())
     {
         WorldPacket data(MSG_MINIMAP_PING, (8 + 4 + 4));
         data << me->GetGUID();
         data << me->GetPositionX();
         data << me->GetPositionY();
-        me->GetOwner()->ToPlayer()->GetSession()->SendPacket(&data);
+        me->GetOwner()->ToPlayer()->SendDirectMessage(&data);
     }
 }

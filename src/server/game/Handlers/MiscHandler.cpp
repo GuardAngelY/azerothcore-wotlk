@@ -1,14 +1,14 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
@@ -22,7 +22,6 @@
 #include "CharacterPackets.h"
 #include "Chat.h"
 #include "Common.h"
-#include "CreatureAI.h"
 #include "DBCEnums.h"
 #include "DatabaseEnv.h"
 #include "GameObjectAI.h"
@@ -30,6 +29,7 @@
 #include "GossipDef.h"
 #include "Group.h"
 #include "GuildMgr.h"
+#include "InstancePackets.h"
 #include "InstanceScript.h"
 #include "Language.h"
 #include "Log.h"
@@ -46,13 +46,14 @@
 #include "ScriptMgr.h"
 #include "SocialMgr.h"
 #include "Spell.h"
-#include "UpdateData.h"
 #include "Vehicle.h"
 #include "WhoListCacheMgr.h"
 #include "World.h"
 #include "WorldPacket.h"
 #include "WorldSession.h"
 #include <zlib.h>
+
+#include "Corpse.h"
 
 void WorldSession::HandleRepopRequestOpcode(WorldPacket& recv_data)
 {
@@ -63,7 +64,7 @@ void WorldSession::HandleRepopRequestOpcode(WorldPacket& recv_data)
     if (GetPlayer()->IsAlive() || GetPlayer()->HasPlayerFlag(PLAYER_FLAGS_GHOST))
         return;
 
-    if (GetPlayer()->HasAuraType(SPELL_AURA_PREVENT_RESURRECTION))
+    if (GetPlayer()->HasPreventResurectionAura())
         return; // silently return, client should display the error by itself
 
     // the world update order is sessions, players, creatures
@@ -71,7 +72,7 @@ void WorldSession::HandleRepopRequestOpcode(WorldPacket& recv_data)
     // creatures can kill players
     // so if the server is lagging enough the player can
     // release spirit after he's killed but before he is updated
-    if (GetPlayer()->getDeathState() == JUST_DIED)
+    if (GetPlayer()->getDeathState() == DeathState::JustDied)
     {
         LOG_DEBUG("network", "HandleRepopRequestOpcode: got request after player {} ({}) was killed and before he was updated",
             GetPlayer()->GetName(), GetPlayer()->GetGUID().ToString());
@@ -94,6 +95,12 @@ void WorldSession::HandleGossipSelectOptionOpcode(WorldPacket& recv_data)
     std::string code = "";
 
     recv_data >> guid >> menuId >> gossipListId;
+
+    if (!_player->PlayerTalkClass->GetGossipMenu().GetItem(gossipListId))
+    {
+        recv_data.rfinish();
+        return;
+    }
 
     if (_player->PlayerTalkClass->IsGossipOptionCoded(gossipListId))
         recv_data >> code;
@@ -181,7 +188,7 @@ void WorldSession::HandleGossipSelectOptionOpcode(WorldPacket& recv_data)
         }
         else
         {
-            sScriptMgr->OnGossipSelectCode(_player, menuId, _player->PlayerTalkClass->GetGossipOptionSender(gossipListId), _player->PlayerTalkClass->GetGossipOptionAction(gossipListId), code.c_str());
+            sScriptMgr->OnPlayerGossipSelectCode(_player, menuId, _player->PlayerTalkClass->GetGossipOptionSender(gossipListId), _player->PlayerTalkClass->GetGossipOptionAction(gossipListId), code.c_str());
         }
     }
     else
@@ -204,7 +211,7 @@ void WorldSession::HandleGossipSelectOptionOpcode(WorldPacket& recv_data)
         }
         else
         {
-            sScriptMgr->OnGossipSelect(_player, menuId, _player->PlayerTalkClass->GetGossipOptionSender(gossipListId), _player->PlayerTalkClass->GetGossipOptionAction(gossipListId));
+            sScriptMgr->OnPlayerGossipSelect(_player, menuId, _player->PlayerTalkClass->GetGossipOptionSender(gossipListId), _player->PlayerTalkClass->GetGossipOptionAction(gossipListId));
         }
     }
 }
@@ -268,7 +275,7 @@ void WorldSession::HandleWhoOpcode(WorldPacket& recvData)
         return;
 
     wstrToLower(wpacketPlayerName);
-    wstrToLower(wpacketGuildName);;
+    wstrToLower(wpacketGuildName);
 
     // client send in case not set max level value 100 but Acore supports 255 max level,
     // update it to show GMs with characters after 100 level
@@ -431,7 +438,7 @@ void WorldSession::HandleLogoutRequestOpcode(WorldPackets::Character::LogoutRequ
     bool preventAfkLogout = sWorld->getIntConfig(CONFIG_AFK_PREVENT_LOGOUT) == 2
                             && GetPlayer()->isAFK();
 
-    /// TODO: Possibly add RBAC permission to log out in combat
+    /// @todo: Possibly add RBAC permission to log out in combat
     bool canLogoutInCombat = GetPlayer()->HasPlayerFlag(PLAYER_FLAGS_RESTING);
 
     uint32 reason = 0;
@@ -468,7 +475,7 @@ void WorldSession::HandleLogoutRequestOpcode(WorldPackets::Character::LogoutRequ
             GetPlayer()->SetStandState(UNIT_STAND_STATE_SIT);
         }
 
-        GetPlayer()->SetRooted(true);
+        GetPlayer()->SetRooted(true, true, true);
         GetPlayer()->SetUnitFlag(UNIT_FLAG_STUNNED);
     }
 
@@ -481,6 +488,10 @@ void WorldSession::HandlePlayerLogoutOpcode(WorldPackets::Character::PlayerLogou
 
 void WorldSession::HandleLogoutCancelOpcode(WorldPackets::Character::LogoutCancel& /*logoutCancel*/)
 {
+    // Player have already logged out serverside, too late to cancel
+    if (!GetPlayer())
+        return;
+
     SetLogoutStartTime(0);
 
     SendPacket(WorldPackets::Character::LogoutCancelAck().Write());
@@ -488,7 +499,7 @@ void WorldSession::HandleLogoutCancelOpcode(WorldPackets::Character::LogoutCance
     // not remove flags if can't free move - its not set in Logout request code.
     if (GetPlayer()->CanFreeMove())
     {
-        GetPlayer()->SetRooted(false);
+        GetPlayer()->SetRooted(false, true, true);
 
         GetPlayer()->SetStandState(UNIT_STAND_STATE_STAND);
         GetPlayer()->RemoveUnitFlag(UNIT_FLAG_STUNNED);
@@ -533,16 +544,6 @@ void WorldSession::HandleSetSelectionOpcode(WorldPacket& recv_data)
 {
     ObjectGuid guid;
     recv_data >> guid;
-
-    if (!guid)
-    {
-        // Clear any active gossip related to current selection if not present at player's client
-        GossipMenu& gossipMenu = _player->PlayerTalkClass->GetGossipMenu();
-        if (gossipMenu.GetSenderGUID() == _player->GetTarget())
-        {
-            _player->PlayerTalkClass->SendCloseGossip();
-        }
-    }
 
     _player->SetSelection(guid);
 
@@ -617,7 +618,7 @@ void WorldSession::HandleCharacterAuraFrozen(PreparedQueryResult result)
     {
         Field* fields = result->Fetch();
         std::string player = fields[0].Get<std::string>();
-        handler.PSendSysMessage(LANG_COMMAND_FROZEN_PLAYERS, player.c_str());
+        handler.PSendSysMessage(LANG_COMMAND_FROZEN_PLAYERS, player);
     } while (result->NextRow());
 }
 
@@ -630,14 +631,6 @@ void WorldSession::HandleBugOpcode(WorldPacket& recv_data)
 
     recv_data >> typelen >> type;
 
-    if (suggestion == 0)
-        LOG_DEBUG("network", "WORLD: Received CMSG_BUG [Bug Report]");
-    else
-        LOG_DEBUG("network", "WORLD: Received CMSG_BUG [Suggestion]");
-
-    LOG_DEBUG("network", "{}", type);
-    LOG_DEBUG("network", "{}", content);
-
     CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_BUG_REPORT);
 
     stmt->SetData(0, type);
@@ -648,8 +641,6 @@ void WorldSession::HandleBugOpcode(WorldPacket& recv_data)
 
 void WorldSession::HandleReclaimCorpseOpcode(WorldPacket& recv_data)
 {
-    LOG_DEBUG("network", "WORLD: Received CMSG_RECLAIM_CORPSE");
-
     ObjectGuid guid;
     recv_data >> guid;
 
@@ -672,7 +663,8 @@ void WorldSession::HandleReclaimCorpseOpcode(WorldPacket& recv_data)
     if (time_t(corpse->GetGhostTime() + _player->GetCorpseReclaimDelay(corpse->GetType() == CORPSE_RESURRECTABLE_PVP)) > time_t(GameTime::GetGameTime().count()))
         return;
 
-    if (!corpse->IsWithinDistInMap(_player, CORPSE_RECLAIM_RADIUS, true))
+    // skip phase check
+    if (!corpse->IsInMap(_player) || !corpse->IsWithinDist(_player, CORPSE_RECLAIM_RADIUS, true))
         return;
 
     // resurrect
@@ -684,15 +676,13 @@ void WorldSession::HandleReclaimCorpseOpcode(WorldPacket& recv_data)
 
 void WorldSession::HandleResurrectResponseOpcode(WorldPacket& recv_data)
 {
-    LOG_DEBUG("network", "WORLD: Received CMSG_RESURRECT_RESPONSE");
-
     ObjectGuid guid;
     uint8 status;
     recv_data >> guid;
     recv_data >> status;
 
     // Xinef: Prevent resurrect with prevent resurrection aura
-    if (GetPlayer()->IsAlive() || GetPlayer()->HasAuraType(SPELL_AURA_PREVENT_RESURRECTION))
+    if (GetPlayer()->IsAlive() || GetPlayer()->HasPreventResurectionAura())
         return;
 
     if (status == 0)
@@ -705,23 +695,6 @@ void WorldSession::HandleResurrectResponseOpcode(WorldPacket& recv_data)
         return;
 
     GetPlayer()->ResurectUsingRequestData();
-}
-
-void WorldSession::SendAreaTriggerMessage(const char* Text, ...)
-{
-    va_list ap;
-    char szStr [1024];
-    szStr[0] = '\0';
-
-    va_start(ap, Text);
-    vsnprintf(szStr, 1024, Text, ap);
-    va_end(ap);
-
-    uint32 length = strlen(szStr) + 1;
-    WorldPacket data(SMSG_AREA_TRIGGER_MESSAGE, 4 + length);
-    data << length;
-    data << szStr;
-    SendPacket(&data);
 }
 
 void WorldSession::HandleAreaTriggerOpcode(WorldPacket& recv_data)
@@ -759,7 +732,8 @@ void WorldSession::HandleAreaTriggerOpcode(WorldPacket& recv_data)
     if (player->isDebugAreaTriggers)
         ChatHandler(this).PSendSysMessage(LANG_DEBUG_AREATRIGGER_REACHED, triggerId);
 
-    if (sScriptMgr->OnAreaTrigger(player, atEntry))
+    // Skip areatrigger scripts for GMs unless debug areatriggers is enabled
+    if ((!player->IsGameMaster() || player->isDebugAreaTriggers) && sScriptMgr->OnAreaTrigger(player, atEntry))
         return;
 
     if (player->IsAlive())
@@ -777,7 +751,7 @@ void WorldSession::HandleAreaTriggerOpcode(WorldPacket& recv_data)
             if (player->HasByteFlag(UNIT_FIELD_BYTES_2, 1, UNIT_BYTE2_FLAG_FFA_PVP))
             {
                 player->RemoveByteFlag(UNIT_FIELD_BYTES_2, 1, UNIT_BYTE2_FLAG_FFA_PVP);
-                sScriptMgr->OnFfaPvpStateUpdate(player, false);
+                sScriptMgr->OnPlayerFfaPvpStateUpdate(player, false);
 
             }
         }
@@ -844,14 +818,12 @@ void WorldSession::HandleAreaTriggerOpcode(WorldPacket& recv_data)
 
 void WorldSession::HandleUpdateAccountData(WorldPacket& recv_data)
 {
-    LOG_DEBUG("network", "WORLD: Received CMSG_UPDATE_ACCOUNT_DATA");
-
     uint32 type, timestamp, decompressedSize;
     recv_data >> type >> timestamp >> decompressedSize;
 
     LOG_DEBUG("network", "UAD: type {}, time {}, decompressedSize {}", type, timestamp, decompressedSize);
 
-    if (type > NUM_ACCOUNT_DATA_TYPES)
+    if (type >= NUM_ACCOUNT_DATA_TYPES)
         return;
 
     if (decompressedSize == 0)                               // erase
@@ -899,8 +871,6 @@ void WorldSession::HandleUpdateAccountData(WorldPacket& recv_data)
 
 void WorldSession::HandleRequestAccountData(WorldPacket& recv_data)
 {
-    LOG_DEBUG("network", "WORLD: Received CMSG_REQUEST_ACCOUNT_DATA");
-
     uint32 type;
     recv_data >> type;
 
@@ -937,7 +907,6 @@ void WorldSession::HandleRequestAccountData(WorldPacket& recv_data)
 
 void WorldSession::HandleSetActionButtonOpcode(WorldPacket& recv_data)
 {
-    LOG_DEBUG("network", "WORLD: Received CMSG_SET_ACTION_BUTTON");
     uint8 button;
     uint32 packetData;
     recv_data >> button >> packetData;
@@ -979,28 +948,14 @@ void WorldSession::HandleSetActionButtonOpcode(WorldPacket& recv_data)
 
 void WorldSession::HandleCompleteCinematic(WorldPacket& /*recv_data*/)
 {
-{
-    LOG_DEBUG("network", "WORLD: Received CMSG_COMPLETE_CINEMATIC");
-}
-    // If player has sight bound to visual waypoint NPC we should remove it
-    GetPlayer()->GetCinematicMgr()->EndCinematic();
+    // End the current cinematic and restore the normal player view
+    GetPlayer()->GetCinematicMgr().EndCinematic();
 }
 
 void WorldSession::HandleNextCinematicCamera(WorldPacket& /*recv_data*/)
 {
-{
-    LOG_DEBUG("network", "WORLD: Received CMSG_NEXT_CINEMATIC_CAMERA");
-}
     // Sent by client when cinematic actually begun. So we begin the server side process
-    GetPlayer()->GetCinematicMgr()->BeginCinematic();
-}
-
-void WorldSession::HandleFeatherFallAck(WorldPacket& recv_data)
-{
-    LOG_DEBUG("network", "WORLD: CMSG_MOVE_FEATHER_FALL_ACK");
-
-    // no used
-    recv_data.rfinish();                       // prevent warnings spam
+    GetPlayer()->GetCinematicMgr().StartCinematicCamera();
 }
 
 void WorldSession::HandleSetActionBarToggles(WorldPacket& recv_data)
@@ -1033,12 +988,20 @@ void WorldSession::HandleInspectOpcode(WorldPacket& recv_data)
     ObjectGuid guid;
     recv_data >> guid;
 
-    LOG_DEBUG("network", "WORLD: Received CMSG_INSPECT");
-
     Player* player = ObjectAccessor::GetPlayer(*_player, guid);
     if (!player)
     {
         LOG_DEBUG("network", "CMSG_INSPECT: No player found from {}", guid.ToString());
+        return;
+    }
+
+    if (!GetPlayer()->IsWithinDistInMap(player, INSPECT_DISTANCE, false))
+    {
+        return;
+    }
+
+    if (GetPlayer()->IsValidAttackTarget(player))
+    {
         return;
     }
 
@@ -1074,6 +1037,16 @@ void WorldSession::HandleInspectHonorStatsOpcode(WorldPacket& recv_data)
         return;
     }
 
+    if (!GetPlayer()->IsWithinDistInMap(player, INSPECT_DISTANCE, false))
+    {
+        return;
+    }
+
+    if (GetPlayer()->IsValidAttackTarget(player))
+    {
+        return;
+    }
+
     WorldPacket data(MSG_INSPECT_HONOR_STATS, 8 + 1 + 4 * 4);
     data << player->GetGUID();
     data << uint8(player->GetHonorPoints());
@@ -1100,8 +1073,6 @@ void WorldSession::HandleWorldTeleportOpcode(WorldPacket& recv_data)
     recv_data >> PositionZ;
     recv_data >> Orientation;                               // o (3.141593 = 180 degrees)
 
-    LOG_DEBUG("network", "WORLD: Received CMSG_WORLD_TELEPORT");
-
     if (GetPlayer()->IsInFlight())
     {
         LOG_DEBUG("network", "Player '{}' ({}) in flight, ignore worldport command.", GetPlayer()->GetName(), GetPlayer()->GetGUID().ToString());
@@ -1113,7 +1084,7 @@ void WorldSession::HandleWorldTeleportOpcode(WorldPacket& recv_data)
     if (AccountMgr::IsAdminAccount(GetSecurity()))
         GetPlayer()->TeleportTo(mapid, PositionX, PositionY, PositionZ, Orientation);
     else
-        SendNotification(LANG_YOU_NOT_HAVE_PERMISSION);
+        ChatHandler(this).SendNotification(LANG_PERMISSION_DENIED);
 }
 
 void WorldSession::HandleWhoisOpcode(WorldPacket& recv_data)
@@ -1124,13 +1095,13 @@ void WorldSession::HandleWhoisOpcode(WorldPacket& recv_data)
 
     if (!AccountMgr::IsAdminAccount(GetSecurity()))
     {
-        SendNotification(LANG_YOU_NOT_HAVE_PERMISSION);
+        ChatHandler(this).SendNotification(LANG_PERMISSION_DENIED);
         return;
     }
 
     if (charname.empty() || !normalizePlayerName (charname))
     {
-        SendNotification(LANG_NEED_CHARACTER_NAME);
+        ChatHandler(this).SendNotification(LANG_NEED_CHARACTER_NAME);
         return;
     }
 
@@ -1138,7 +1109,7 @@ void WorldSession::HandleWhoisOpcode(WorldPacket& recv_data)
 
     if (!player)
     {
-        SendNotification(LANG_PLAYER_NOT_EXIST_OR_OFFLINE, charname.c_str());
+        ChatHandler(this).SendNotification(LANG_PLAYER_NOT_EXIST_OR_OFFLINE, charname.c_str());
         return;
     }
 
@@ -1152,7 +1123,7 @@ void WorldSession::HandleWhoisOpcode(WorldPacket& recv_data)
 
     if (!result)
     {
-        SendNotification(LANG_ACCOUNT_FOR_PLAYER_NOT_FOUND, charname.c_str());
+        ChatHandler(this).SendNotification(LANG_ACCOUNT_FOR_PLAYER_NOT_FOUND, charname.c_str());
         return;
     }
 
@@ -1176,45 +1147,31 @@ void WorldSession::HandleWhoisOpcode(WorldPacket& recv_data)
     LOG_DEBUG("network", "Received whois command from player {} for character {}", GetPlayer()->GetName(), charname);
 }
 
-void WorldSession::HandleComplainOpcode(WorldPacket& recv_data)
+void WorldSession::HandleComplainOpcode(WorldPackets::Misc::Complain& packet)
 {
     LOG_DEBUG("network", "WORLD: CMSG_COMPLAIN");
-
-    uint8 spam_type;                                        // 0 - mail, 1 - chat
-    ObjectGuid spammer_guid;
-    uint32 unk1 = 0;
-    uint32 unk2 = 0;
-    uint32 unk3 = 0;
-    uint32 unk4 = 0;
-    std::string description = "";
-    recv_data >> spam_type;                                 // unk 0x01 const, may be spam type (mail/chat)
-    recv_data >> spammer_guid;                              // player guid
-    switch (spam_type)
-    {
-        case 0:
-            recv_data >> unk1;                              // const 0
-            recv_data >> unk2;                              // probably mail id
-            recv_data >> unk3;                              // const 0
-            break;
-        case 1:
-            recv_data >> unk1;                              // probably language
-            recv_data >> unk2;                              // message type?
-            recv_data >> unk3;                              // probably channel id
-            recv_data >> unk4;                              // unk random value
-            recv_data >> description;                       // spam description string (messagetype, channel name, player name, message)
-            break;
-    }
 
     // NOTE: all chat messages from this spammer automatically ignored by spam reporter until logout in case chat spam.
     // if it's mail spam - ALL mails from this spammer automatically removed by client
 
     // Complaint Received message
-    WorldPacket data(SMSG_COMPLAIN_RESULT, 1);
-    data << uint8(0);
-    SendPacket(&data);
+    SendPacket(WorldPackets::Misc::ComplainResult().Write());
 
-    LOG_DEBUG("network", "REPORT SPAM: type {}, {}, unk1 {}, unk2 {}, unk3 {}, unk4 {}, message {}",
-        spam_type, spammer_guid.ToString(), unk1, unk2, unk3, unk4, description);
+    if (sWorld->getBoolConfig(CONFIG_LOGSPAMREPORTS))
+    {
+        CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_SPAM_REPORT);
+
+        stmt->SetData(0, packet.SpamType);
+        stmt->SetData(1, packet.SpammerGuid.GetCounter());
+        stmt->SetData(2, packet.Unk1);
+        stmt->SetData(3, packet.MailIdOrMessageType);
+        stmt->SetData(4, packet.ChannelId);
+        stmt->SetData(5, packet.SecondsSinceMessage);
+        stmt->SetData(6, packet.Description);
+        stmt->SetData(7, GameTime::GetGameTime().count());
+
+        CharacterDatabase.Execute(stmt);
+    }
 }
 
 void WorldSession::HandleRealmSplitOpcode(WorldPacket& recv_data)
@@ -1304,7 +1261,7 @@ void WorldSession::HandleSetTitleOpcode(WorldPacket& recv_data)
     GetPlayer()->SetUInt32Value(PLAYER_CHOSEN_TITLE, title);
 }
 
-void WorldSession::HandleResetInstancesOpcode(WorldPacket& /*recv_data*/)
+void WorldSession::HandleResetInstancesOpcode(WorldPackets::Instance::ResetInstances& /*packet*/)
 {
     LOG_DEBUG("network", "WORLD: CMSG_RESET_INSTANCES");
 
@@ -1317,17 +1274,14 @@ void WorldSession::HandleResetInstancesOpcode(WorldPacket& /*recv_data*/)
         Player::ResetInstances(_player->GetGUID(), INSTANCE_RESET_ALL, false);
 }
 
-void WorldSession::HandleSetDungeonDifficultyOpcode(WorldPacket& recv_data)
+void WorldSession::HandleSetDungeonDifficultyOpcode(WorldPackets::Instance::SetDungeonDifficultyClient& packet)
 {
     LOG_DEBUG("network", "MSG_SET_DUNGEON_DIFFICULTY");
 
-    uint32 mode;
-    recv_data >> mode;
-
-    if (mode >= MAX_DUNGEON_DIFFICULTY)
+    if (packet.Mode >= MAX_DUNGEON_DIFFICULTY)
         return;
 
-    if (Difficulty(mode) == _player->GetDungeonDifficulty())
+    if (Difficulty(packet.Mode) == _player->GetDungeonDifficulty())
         return;
 
     Group* group = _player->GetGroup();
@@ -1355,7 +1309,7 @@ void WorldSession::HandleSetDungeonDifficultyOpcode(WorldPacket& recv_data)
             }
 
             group->ResetInstances(INSTANCE_RESET_CHANGE_DIFFICULTY, false, _player);
-            group->SetDungeonDifficulty(Difficulty(mode));
+            group->SetDungeonDifficulty(Difficulty(packet.Mode));
         }
     }
     else
@@ -1366,21 +1320,18 @@ void WorldSession::HandleSetDungeonDifficultyOpcode(WorldPacket& recv_data)
             return;
         }
         Player::ResetInstances(_player->GetGUID(), INSTANCE_RESET_CHANGE_DIFFICULTY, false);
-        _player->SetDungeonDifficulty(Difficulty(mode));
+        _player->SetDungeonDifficulty(Difficulty(packet.Mode));
     }
 }
 
-void WorldSession::HandleSetRaidDifficultyOpcode(WorldPacket& recv_data)
+void WorldSession::HandleSetRaidDifficultyOpcode(WorldPackets::Instance::SetRaidDifficultyClient& packet)
 {
     LOG_DEBUG("network", "MSG_SET_RAID_DIFFICULTY");
 
-    uint32 mode;
-    recv_data >> mode;
-
-    if (mode >= MAX_RAID_DIFFICULTY)
+    if (packet.Mode >= MAX_RAID_DIFFICULTY)
         return;
 
-    if (Difficulty(mode) == _player->GetRaidDifficulty())
+    if (Difficulty(packet.Mode) == _player->GetRaidDifficulty())
         return;
 
     Group* group = _player->GetGroup();
@@ -1397,11 +1348,11 @@ void WorldSession::HandleSetRaidDifficultyOpcode(WorldPacket& recv_data)
                 switch (group->GetDifficultyChangePreventionReason())
                 {
                     case DIFFICULTY_PREVENTION_CHANGE_BOSS_KILLED:
-                        ChatHandler(this).PSendSysMessage("Raid was in combat recently and may not change difficulty again for %u sec.", preventionTime);
+                        ChatHandler(this).PSendSysMessage("Raid was in combat recently and may not change difficulty again for {} sec.", preventionTime);
                         break;
                     case DIFFICULTY_PREVENTION_CHANGE_RECENTLY_CHANGED:
                     default:
-                        ChatHandler(this).PSendSysMessage("Raid difficulty has changed recently, and may not change again for %u sec.", preventionTime);
+                        ChatHandler(this).PSendSysMessage("Raid difficulty has changed recently, and may not change again for {} sec.", preventionTime);
                         break;
                 }
 
@@ -1421,7 +1372,7 @@ void WorldSession::HandleSetRaidDifficultyOpcode(WorldPacket& recv_data)
                     return;
                 }
 
-                if (IsSharedDifficultyMap(groupGuy->GetMap()->GetId()) && (_player->GetRaidDifficulty() >= 0 && uint32(mode % 2) == uint32(_player->GetRaidDifficulty() % 2)) && group->isRaidGroup())
+                if (IsSharedDifficultyMap(groupGuy->GetMap()->GetId()) && (uint32(packet.Mode % 2) == uint32(_player->GetRaidDifficulty() % 2)) && group->isRaidGroup())
                 {
                     if (!currMap)
                         currMap = groupGuy->GetMap();
@@ -1435,7 +1386,7 @@ void WorldSession::HandleSetRaidDifficultyOpcode(WorldPacket& recv_data)
 
                     if (!groupGuy->IsAlive() || groupGuy->IsInCombat() || groupGuy->GetVictim() || groupGuy->m_mover != groupGuy || groupGuy->IsNonMeleeSpellCast(true) || (!groupGuy->GetMotionMaster()->empty() && groupGuy->GetMotionMaster()->GetCurrentMovementGeneratorType() != IDLE_MOTION_TYPE)
                             || !groupGuy->movespline->Finalized() || !groupGuy->GetMap()->ToInstanceMap() || !groupGuy->GetMap()->ToInstanceMap()->GetInstanceScript() || groupGuy->GetMap()->ToInstanceMap()->GetInstanceScript()->IsEncounterInProgress()
-                            || !groupGuy->Satisfy(sObjectMgr->GetAccessRequirement(groupGuy->GetMap()->GetId(), Difficulty(mode)), groupGuy->GetMap()->GetId(), false))
+                            || !groupGuy->Satisfy(sObjectMgr->GetAccessRequirement(groupGuy->GetMap()->GetId(), Difficulty(packet.Mode)), groupGuy->GetMap()->GetId(), false))
                     {
                         _player->SendRaidDifficulty(group != nullptr);
                         return;
@@ -1448,8 +1399,8 @@ void WorldSession::HandleSetRaidDifficultyOpcode(WorldPacket& recv_data)
                 }
             }
 
-            Map* homeMap571 = sMapMgr->CreateMap(571, nullptr);
-            Map* homeMap0 = sMapMgr->CreateMap(0, nullptr);
+            Map* homeMap571 = sMapMgr->CreateMap(MAP_NORTHREND, nullptr);
+            Map* homeMap0 = sMapMgr->CreateMap(MAP_EASTERN_KINGDOMS, nullptr);
             ASSERT(homeMap0 && homeMap571);
 
             std::map<Player*, Position> playerTeleport;
@@ -1476,7 +1427,7 @@ void WorldSession::HandleSetRaidDifficultyOpcode(WorldPacket& recv_data)
                 oldMap->AfterPlayerUnlinkFromMap();
                 p->SetMap(homeMap0);
                 p->Relocate(0.0f, 0.0f, 0.0f, 0.0f);
-                if (!p->TeleportTo(571, 5790.20f, 2071.36f, 636.07f, 3.60f))
+                if (!p->TeleportTo(MAP_NORTHREND, 5790.20f, 2071.36f, 636.07f, 3.60f))
                     p->GetSession()->KickPlayer("HandleSetRaidDifficultyOpcode 1");
             }
 
@@ -1507,12 +1458,12 @@ void WorldSession::HandleSetRaidDifficultyOpcode(WorldPacket& recv_data)
 
             if (!anyoneInside) // pussywizard: don't reset if changing ICC/RS difficulty while inside
                 group->ResetInstances(INSTANCE_RESET_CHANGE_DIFFICULTY, true, _player);
-            group->SetRaidDifficulty(Difficulty(mode));
+            group->SetRaidDifficulty(Difficulty(packet.Mode));
             group->SetDifficultyChangePrevention(DIFFICULTY_PREVENTION_CHANGE_RECENTLY_CHANGED);
 
             for (std::map<Player*, Position>::iterator itr = playerTeleport.begin(); itr != playerTeleport.end(); ++itr)
             {
-                itr->first->SetRaidDifficulty(Difficulty(mode)); // needed for teleport not to fail
+                itr->first->SetRaidDifficulty(Difficulty(packet.Mode)); // needed for teleport not to fail
                 if (!itr->first->TeleportTo(*(foundMaps.begin()), itr->second.GetPositionX(), itr->second.GetPositionY(), itr->second.GetPositionZ(), itr->second.GetOrientation()))
                     itr->first->GetSession()->KickPlayer("HandleSetRaidDifficultyOpcode 2");
             }
@@ -1526,7 +1477,7 @@ void WorldSession::HandleSetRaidDifficultyOpcode(WorldPacket& recv_data)
             return;
         }
         Player::ResetInstances(_player->GetGUID(), INSTANCE_RESET_CHANGE_DIFFICULTY, true);
-        _player->SetRaidDifficulty(Difficulty(mode));
+        _player->SetRaidDifficulty(Difficulty(packet.Mode));
     }
 }
 
@@ -1551,12 +1502,15 @@ void WorldSession::HandleCancelMountAuraOpcode(WorldPacket& /*recv_data*/)
     _player->RemoveAurasByType(SPELL_AURA_MOUNTED);
 }
 
-void WorldSession::HandleMoveSetCanFlyAckOpcode(WorldPacket& recv_data)
+void WorldSession::HandleMoveFlagChangeOpcode(WorldPacket& recv_data)
 {
-    // fly mode on/off
-    LOG_DEBUG("network", "WORLD: CMSG_MOVE_SET_CAN_FLY_ACK");
+    LOG_DEBUG("network", "WORLD: {}", GetOpcodeNameForLogging((Opcodes)recv_data.GetOpcode()));
+
+    Opcodes opcode = (Opcodes)recv_data.GetOpcode();
 
     ObjectGuid guid;
+    uint32 counter;
+    uint32 isApplied;
     recv_data >> guid.ReadAsPacked();
 
     if (!_player)
@@ -1565,17 +1519,51 @@ void WorldSession::HandleMoveSetCanFlyAckOpcode(WorldPacket& recv_data)
         return;
     }
 
-    recv_data.read_skip<uint32>();                          // unk
+    recv_data >> counter;
 
     MovementInfo movementInfo;
     movementInfo.guid = guid;
     ReadMovementInfo(recv_data, &movementInfo);
 
-    recv_data.read_skip<float>();                           // unk2
+    if (opcode != CMSG_MOVE_GRAVITY_DISABLE_ACK && opcode != CMSG_MOVE_GRAVITY_ENABLE_ACK)
+        recv_data >> isApplied;
 
     sScriptMgr->AnticheatSetCanFlybyServer(_player, movementInfo.HasMovementFlag(MOVEMENTFLAG_CAN_FLY));
 
-    _player->m_mover->m_movementInfo.flags = movementInfo.GetMovementFlags();
+    Unit* mover = _player->m_mover;
+    Player* plrMover = mover->ToPlayer();
+
+    mover->m_movementInfo.flags = movementInfo.GetMovementFlags();
+
+    // old map - async processing, ignore
+    if (counter <= _player->GetMapChangeOrderCounter())
+        return;
+
+    if (!ProcessMovementInfo(movementInfo, mover, plrMover, recv_data))
+    {
+        recv_data.rfinish();                     // prevent warnings spam
+        return;
+    }
+
+    if (_player->GetPendingFlightChange() == counter && opcode == CMSG_MOVE_SET_CAN_FLY_ACK)
+        _player->SetPendingFlightChange(false);
+
+    Opcodes response;
+
+    switch (recv_data.GetOpcode())
+    {
+        case CMSG_MOVE_HOVER_ACK: response = MSG_MOVE_HOVER; break;
+        case CMSG_MOVE_FEATHER_FALL_ACK: response = MSG_MOVE_FEATHER_FALL; break;
+        case CMSG_MOVE_WATER_WALK_ACK: response = MSG_MOVE_WATER_WALK; break;
+        case CMSG_MOVE_SET_CAN_FLY_ACK: response = MSG_MOVE_UPDATE_CAN_FLY; break;
+        case CMSG_MOVE_GRAVITY_DISABLE_ACK: response = MSG_MOVE_GRAVITY_CHNG; break;
+        case CMSG_MOVE_GRAVITY_ENABLE_ACK: response = MSG_MOVE_GRAVITY_CHNG; break;
+        default: return;
+    }
+
+    WorldPacket data(response, 8);
+    WriteMovementInfo(&data, &movementInfo);
+    _player->m_mover->SendMessageToSet(&data, _player);
 }
 
 void WorldSession::HandleRequestPetInfo(WorldPackets::Pet::RequestPetInfo& /*packet*/)
@@ -1587,8 +1575,15 @@ void WorldSession::HandleRequestPetInfo(WorldPackets::Pet::RequestPetInfo& /*pac
 
     if (_player->GetPet())
         _player->PetSpellInitialize();
-    else if (_player->GetCharm())
-        _player->CharmSpellInitialize();
+    else if (Unit* charm = _player->GetCharm())
+    {
+        if (charm->HasUnitState(UNIT_STATE_POSSESSED))
+            _player->PossessSpellInitialize();
+        else if (charm->HasUnitFlag(UNIT_FLAG_PLAYER_CONTROLLED) && charm->HasUnitFlag(UNIT_FLAG_POSSESSED))
+            _player->VehicleSpellInitialize();
+        else
+            _player->CharmSpellInitialize();
+    }
 }
 
 void WorldSession::HandleSetTaxiBenchmarkOpcode(WorldPacket& recv_data)
@@ -1608,7 +1603,19 @@ void WorldSession::HandleQueryInspectAchievements(WorldPacket& recv_data)
 
     Player* player = ObjectAccessor::GetPlayer(*_player, guid);
     if (!player)
+    {
         return;
+    }
+
+    if (!GetPlayer()->IsWithinDistInMap(player, INSPECT_DISTANCE, false))
+    {
+        return;
+    }
+
+    if (GetPlayer()->IsValidAttackTarget(player))
+    {
+        return;
+    }
 
     player->SendRespondInspectAchievements(_player);
 }
@@ -1690,7 +1697,7 @@ void WorldSession::HandleHearthAndResurrect(WorldPacket& /*recv_data*/)
     if (_player->IsInFlight())
         return;
 
-    if(Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(_player->GetZoneId()))
+    if (Battlefield* bf = sBattlefieldMgr->GetBattlefieldToZoneId(_player->GetZoneId()))
     {
         bf->PlayerAskToLeave(_player);
         return;
@@ -1703,14 +1710,11 @@ void WorldSession::HandleHearthAndResurrect(WorldPacket& /*recv_data*/)
     _player->BuildPlayerRepop();
     _player->ResurrectPlayer(1.0f);
     _player->SpawnCorpseBones();
-    _player->TeleportTo(_player->m_homebindMapId, _player->m_homebindX, _player->m_homebindY, _player->m_homebindZ, _player->m_homebindO);
+    _player->TeleportTo(_player->m_homebindMapId, _player->m_homebindX, _player->m_homebindY, _player->m_homebindZ, _player->GetOrientation());
 }
 
-void WorldSession::HandleInstanceLockResponse(WorldPacket& recvPacket)
+void WorldSession::HandleInstanceLockResponse(WorldPackets::Instance::InstanceLockResponse& packet)
 {
-    uint8 accept;
-    recvPacket >> accept;
-
     if (!_player->HasPendingBind() || _player->GetPendingBind() != _player->GetInstanceId() || (_player->GetGroup() && _player->GetGroup()->isLFGGroup() && _player->GetGroup()->IsLfgRandomInstance()))
     {
         LOG_DEBUG("network.opcode", "InstanceLockResponse: Player {} ({}) tried to bind himself/teleport to graveyard without a pending bind!",
@@ -1718,7 +1722,7 @@ void WorldSession::HandleInstanceLockResponse(WorldPacket& recvPacket)
         return;
     }
 
-    if (accept)
+    if (packet.Accept)
         _player->BindToInstance();
     else
         _player->RepopAtGraveyard();

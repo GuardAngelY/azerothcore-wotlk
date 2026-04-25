@@ -1,28 +1,28 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "InstanceMapScript.h"
 #include "InstanceScript.h"
-#include "ScriptMgr.h"
 #include "blackfathom_deeps.h"
 
 class instance_blackfathom_deeps : public InstanceMapScript
 {
 public:
-    instance_blackfathom_deeps() : InstanceMapScript("instance_blackfathom_deeps", 48) { }
+    instance_blackfathom_deeps() : InstanceMapScript("instance_blackfathom_deeps", MAP_BLACKFATHOM_DEEPS) { }
 
     InstanceScript* GetInstanceScript(InstanceMap* map) const override
     {
@@ -35,6 +35,7 @@ public:
 
         void Initialize() override
         {
+            SetHeaders(DataHeader);
             memset(&_encounters, 0, sizeof(_encounters));
             _requiredDeaths = 0;
         }
@@ -111,30 +112,24 @@ public:
                 SaveToDB();
         }
 
-        std::string GetSaveData() override
+        void ReadSaveDataMore(std::istringstream& data) override
         {
-            std::ostringstream saveStream;
-            saveStream << "B L " << _encounters[0] << ' ' << _encounters[1] << ' ' << _encounters[2] << ' ' << _encounters[3] << ' ' << _encounters[4] << ' ' << _encounters[5];
-            return saveStream.str();
+            data >> _encounters[0];
+            data >> _encounters[1];
+            data >> _encounters[2];
+            data >> _encounters[3];
+            data >> _encounters[4];
+            data >> _encounters[5];
         }
 
-        void Load(const char* in) override
+        void WriteSaveDataMore(std::ostringstream& data) override
         {
-            if (!in)
-                return;
-
-            char dataHead1, dataHead2;
-            std::istringstream loadStream(in);
-            loadStream >> dataHead1 >> dataHead2;
-            if (dataHead1 == 'B' && dataHead2 == 'L')
-            {
-                for (uint8 i = 0; i < MAX_ENCOUNTERS; ++i)
-                {
-                    loadStream >> _encounters[i];
-                    if (_encounters[i] == IN_PROGRESS)
-                        _encounters[i] = NOT_STARTED;
-                }
-            }
+            data << _encounters[0] << ' '
+                << _encounters[1] << ' '
+                << _encounters[2] << ' '
+                << _encounters[3] << ' '
+                << _encounters[4] << ' '
+                << _encounters[5];
         }
 
         bool IsFireEventDone()

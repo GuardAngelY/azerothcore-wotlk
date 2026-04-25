@@ -1,251 +1,129 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "AreaBoundary.h"
+#include "InstanceMapScript.h"
 #include "Player.h"
-#include "ScriptMgr.h"
 #include "ScriptedCreature.h"
 #include "SpellScript.h"
+#include "SpellScriptLoader.h"
 #include "ahnkahet.h"
-#include <array>
+
+ObjectData const creatureData[] =
+{
+    { NPC_PRINCE_TALDARAM,     DATA_PRINCE_TALDARAM     },
+    { NPC_JEDOGA_SHADOWSEEKER, DATA_JEDOGA_SHADOWSEEKER },
+    { NPC_ELDER_NADOX,         DATA_ELDER_NADOX         },
+    { NPC_HERALD_VOLAZJ,       DATA_HERALD_VOLAZJ       },
+    { NPC_AMANITAR,            DATA_AMANITAR            },
+    { 0,                       0                        }
+};
+
+DoorData const doorData[] =
+{
+    { GO_TELDARAM_DOOR, DATA_PRINCE_TALDARAM, DOOR_TYPE_PASSAGE },
+    { 0,                0,                    DOOR_TYPE_ROOM    }
+};
+
+BossBoundaryData const boundaries =
+{
+    { DATA_JEDOGA_SHADOWSEEKER, new ParallelogramBoundary(Position(460.365f, -661.997f, -20.985f), Position(364.958f,-790.211f, -14.207f), Position(347.436f,-657.978f,14.478f)) }
+};
 
 class instance_ahnkahet : public InstanceMapScript
 {
 public:
-    instance_ahnkahet() : InstanceMapScript(AhnKahetScriptName, 619) { }
+    instance_ahnkahet() : InstanceMapScript(AhnKahetScriptName, MAP_AHN_KAHET_THE_OLD_KINGDOM) { }
 
     struct instance_ahnkahet_InstanceScript : public InstanceScript
     {
-        instance_ahnkahet_InstanceScript(Map* pMap) : InstanceScript(pMap), canSaveBossStates(false)
+        instance_ahnkahet_InstanceScript(Map* pMap) : InstanceScript(pMap)
         {
+            SetHeaders(DataHeader);
             SetBossNumber(MAX_ENCOUNTER);
-            teldaramSpheres.fill(NOT_STARTED);
+            SetPersistentDataCount(MAX_PERSISTENT_DATA);
+            LoadObjectData(creatureData, nullptr);
+            LoadDoorData(doorData);
+            LoadBossBoundaries(boundaries);
         }
 
-        void OnCreatureCreate(Creature* pCreature) override
+        void OnGameObjectCreate(GameObject* go) override
         {
-            switch (pCreature->GetEntry())
-            {
-                case NPC_ELDER_NADOX:
-                    elderNadox_GUID = pCreature->GetGUID();
-                    break;
-                case NPC_PRINCE_TALDARAM:
-                    princeTaldaram_GUID = pCreature->GetGUID();
-                    break;
-                case NPC_JEDOGA_SHADOWSEEKER:
-                    jedogaShadowseeker_GUID = pCreature->GetGUID();
-                    break;
-                case NPC_HERALD_JOLAZJ:
-                    heraldVolazj_GUID = pCreature->GetGUID();
-                    break;
-                case NPC_AMANITAR:
-                    amanitar_GUID = pCreature->GetGUID();
-                    break;
-            }
-        }
-
-        void OnGameObjectCreate(GameObject* pGo) override
-        {
-            switch (pGo->GetEntry())
+            switch (go->GetEntry())
             {
                 case GO_TELDARAM_PLATFORM:
                 {
-                    taldaramPlatform_GUID = pGo->GetGUID();
-                    if (IsAllSpheresActivated() || GetBossState(DATA_PRINCE_TALDARAM) == DONE)
-                    {
-                        HandleGameObject(ObjectGuid::Empty, true, pGo);
-                    }
-
+                    taldaramPlatform_GUID = go->GetGUID();
+                    HandleGameObject(ObjectGuid::Empty, IsAllSpheresActivated(), go);
                     break;
                 }
                 case GO_TELDARAM_SPHERE1:
                 case GO_TELDARAM_SPHERE2:
                 {
-                    if (teldaramSpheres.at(pGo->GetEntry() == GO_TELDARAM_SPHERE1 ? 0 : 1) == DONE || GetBossState(DATA_PRINCE_TALDARAM) == DONE)
+                    if (GetPersistentData(go->GetEntry() == GO_TELDARAM_SPHERE1 ? 0 : 1) == DONE || GetBossState(DATA_PRINCE_TALDARAM) == DONE)
                     {
-                        pGo->SetGoState(GO_STATE_ACTIVE);
-                        pGo->SetGameObjectFlag(GO_FLAG_NOT_SELECTABLE);
+                        go->SetGoState(GO_STATE_ACTIVE);
+                        go->SetGameObjectFlag(GO_FLAG_NOT_SELECTABLE);
                     }
                     else
                     {
-                        pGo->RemoveGameObjectFlag(GO_FLAG_NOT_SELECTABLE);
-                    }
-
-                    break;
-                }
-                case GO_TELDARAM_DOOR:
-                {
-                    taldaramGate_GUID = pGo->GetGUID(); // Web gate past Prince Taldaram
-                    if (GetBossState(DATA_PRINCE_TALDARAM) == DONE)
-                    {
-                        HandleGameObject(ObjectGuid::Empty, true, pGo);
+                        go->RemoveGameObjectFlag(GO_FLAG_NOT_SELECTABLE);
                     }
 
                     break;
                 }
             }
+
+            InstanceScript::OnGameObjectCreate(go);
         }
 
-        bool SetBossState(uint32 type, EncounterState state) override
+        void SetData(uint32 type, uint32 /*data*/) override
         {
-            if (!InstanceScript::SetBossState(type, state))
+            uint8 index = type == DATA_TELDRAM_SPHERE1 ? 0 : 1;
+
+            if ((type == DATA_TELDRAM_SPHERE1 || type == DATA_TELDRAM_SPHERE2) && GetPersistentData(index) != DONE)
             {
-                return false;
-            }
-
-            if (type == DATA_PRINCE_TALDARAM && state == DONE)
-            {
-                HandleGameObject(taldaramGate_GUID, true);
-            }
-
-            if (canSaveBossStates)
-            {
-                SaveToDB();
-            }
-
-            return true;
-        }
-
-        void SetData(uint32 type, uint32 data) override
-        {
-            if (type == DATA_TELDRAM_SPHERE1 || type == DATA_TELDRAM_SPHERE2)
-            {
-
-                teldaramSpheres[type == DATA_TELDRAM_SPHERE1 ? 0 : 1] = data;
+                StorePersistentData(index, DONE);
                 SaveToDB();
 
-                if (IsAllSpheresActivated())
+                if (Creature* taldaram = GetCreature(DATA_PRINCE_TALDARAM))
                 {
-                    HandleGameObject(taldaramPlatform_GUID, true, nullptr);
-
-                    Creature* teldaram = instance->GetCreature(princeTaldaram_GUID);
-                    if (teldaram && teldaram->IsAlive())
+                    if (taldaram->IsAlive())
                     {
-                        teldaram->AI()->DoAction(ACTION_REMOVE_PRISON);
+                        taldaram->AI()->Talk(SAY_SPHERE_ACTIVATED);
+
+                        if (IsAllSpheresActivated())
+                        {
+                            HandleGameObject(taldaramPlatform_GUID, true, nullptr);
+                            taldaram->AI()->DoAction(ACTION_REMOVE_PRISON);
+                        }
                     }
                 }
             }
-        }
-
-        uint32 GetData(uint32 type) const override
-        {
-            switch (type)
-            {
-                case DATA_TELDRAM_SPHERE1:
-                    return teldaramSpheres.at(0);
-                case DATA_TELDRAM_SPHERE2:
-                    return teldaramSpheres.at(1);
-            }
-
-            return 0;
-        }
-
-        ObjectGuid GetGuidData(uint32 type) const override
-        {
-            switch (type)
-            {
-                case DATA_ELDER_NADOX:
-                    return elderNadox_GUID;
-                case DATA_PRINCE_TALDARAM:
-                    return princeTaldaram_GUID;
-                case DATA_JEDOGA_SHADOWSEEKER:
-                    return jedogaShadowseeker_GUID;
-                case DATA_HERALD_VOLAZJ:
-                    return heraldVolazj_GUID;
-                case DATA_AMANITAR:
-                    return amanitar_GUID;
-            }
-
-            return ObjectGuid::Empty;
-        }
-
-        std::string GetSaveData() override
-        {
-            OUT_SAVE_INST_DATA;
-
-            std::ostringstream saveStream;
-            // Encounter states
-            saveStream << "A K " << GetBossSaveData();
-
-            // Extra data
-            saveStream << teldaramSpheres[0] << ' ' << teldaramSpheres[1];
-
-            OUT_SAVE_INST_DATA_COMPLETE;
-            return saveStream.str();
-        }
-
-        void Load(const char* in) override
-        {
-            if (!in)
-            {
-                OUT_LOAD_INST_DATA_FAIL;
-                return;
-            }
-
-            OUT_LOAD_INST_DATA(in);
-
-            char dataHead1, dataHead2;
-
-            std::istringstream loadStream(in);
-            loadStream >> dataHead1 >> dataHead2;
-
-            if (dataHead1 == 'A' && dataHead2 == 'K')
-            {
-                // Encounter states
-                for (uint8 i = 0; i < MAX_ENCOUNTER; ++i)
-                {
-                    uint32 tmpState;
-                    loadStream >> tmpState;
-                    if (tmpState == IN_PROGRESS || tmpState > SPECIAL)
-                    {
-                        tmpState = NOT_STARTED;
-                    }
-
-                    SetBossState(i, EncounterState(tmpState));
-                }
-
-                // Extra data
-                loadStream >> teldaramSpheres[0] >> teldaramSpheres[1];
-            }
-            else
-            {
-                OUT_LOAD_INST_DATA_FAIL;
-                return;
-            }
-
-            canSaveBossStates = true;
-            OUT_LOAD_INST_DATA_COMPLETE;
         }
 
     private:
-        ObjectGuid elderNadox_GUID;
-        ObjectGuid princeTaldaram_GUID;
-        ObjectGuid jedogaShadowseeker_GUID;
-        ObjectGuid heraldVolazj_GUID;
-        ObjectGuid amanitar_GUID;
-
         // Teldaram related
         ObjectGuid taldaramPlatform_GUID;
-        ObjectGuid taldaramGate_GUID;
-        std::array<uint32, 2> teldaramSpheres;  // Used to identify activation status for sphere activation
-        bool canSaveBossStates;     // Indicates that it is safe to trigger SaveToDB call in SetBossState
 
         bool IsAllSpheresActivated() const
         {
-            return teldaramSpheres.at(0) == DONE && teldaramSpheres.at(1) == DONE;
+            return GetBossState(DATA_PRINCE_TALDARAM) == DONE ||
+                (GetPersistentData(DATA_TELDRAM_SPHERE1) == DONE && GetPersistentData(DATA_TELDRAM_SPHERE2) == DONE);
         }
     };
 
@@ -255,15 +133,19 @@ public:
     }
 };
 
-// 56702 Shadow Sickle
-// 59103 Shadow Sickle
+// 56702, 59103 - Shadow Sickle
 class spell_shadow_sickle_periodic_damage : public AuraScript
 {
     PrepareAuraScript(spell_shadow_sickle_periodic_damage);
 
     void HandlePeriodic(AuraEffect const*  /*aurEff*/)
     {
-        GetCaster()->CastSpell(nullptr, SPELL_SHADOW_SICKLE);
+        Unit* caster = GetCaster();
+        if (!caster->IsCreature())
+            return;
+
+        if (Unit* target = caster->GetAI()->SelectTarget(SelectTargetMethod::Random, 0, 40.0f)) // Unknown if it targets only players
+            caster->CastSpell(target, SPELL_SHADOW_SICKLE, true);
     }
 
     void Register() override

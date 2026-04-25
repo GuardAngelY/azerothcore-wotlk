@@ -1,14 +1,14 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
@@ -23,6 +23,7 @@
 #include "ObjectMgr.h"
 #include "Opcodes.h"
 #include "Player.h"
+#include "ScriptMgr.h"
 #include "WorldPacket.h"
 #include "WorldSession.h"
 
@@ -55,7 +56,7 @@ void WorldSession::HandleLfgJoinOpcode(WorldPackets::LFG::LFGJoin& packet)
 
     if (packet.Slots.empty())
     {
-        LOG_DEBUG("lfg", "CMSG_LFG_JOIN {} no dungeons selected", GetPlayerInfo().c_str());
+        LOG_DEBUG("lfg", "CMSG_LFG_JOIN {} no dungeons selected", GetPlayerInfo());
         return;
     }
 
@@ -68,9 +69,10 @@ void WorldSession::HandleLfgJoinOpcode(WorldPackets::LFG::LFGJoin& packet)
     }
 
     LOG_DEBUG("network", "CMSG_LFG_JOIN [{}] roles: {}, Dungeons: {}, Comment: {}",
-                 GetPlayerInfo().c_str(), packet.Roles, newDungeons.size(), packet.Comment.c_str());
+                 GetPlayerInfo(), packet.Roles, newDungeons.size(), packet.Comment);
 
     sLFGMgr->JoinLfg(GetPlayer(), uint8(packet.Roles), newDungeons, packet.Comment);
+    GetPlayer()->UpdateLFGChannel();
 }
 
 void WorldSession::HandleLfgLeaveOpcode(WorldPackets::LFG::LFGLeave& /*packet*/)
@@ -87,6 +89,7 @@ void WorldSession::HandleLfgLeaveOpcode(WorldPackets::LFG::LFGLeave& /*packet*/)
         sLFGMgr->LeaveLfg(sLFGMgr->GetState(guid) == lfg::LFG_STATE_RAIDBROWSER ? guid : gguid);
         sLFGMgr->LeaveAllLfgQueues(guid, true, group ? group->GetGUID() : ObjectGuid::Empty);
     }
+    GetPlayer()->UpdateLFGChannel();
 }
 
 void WorldSession::HandleLfgProposalResultOpcode(WorldPacket& recvData)
@@ -152,12 +155,12 @@ void WorldSession::HandleLfgPlayerLockInfoRequestOpcode(WorldPacket& /*recvData*
     LOG_DEBUG("network", "CMSG_LFG_PLAYER_LOCK_INFO_REQUEST [{}]", guid.ToString());
 
     // Get Random dungeons that can be done at a certain level and expansion
-    uint8 level = GetPlayer()->getLevel();
+    uint8 level = GetPlayer()->GetLevel();
     lfg::LfgDungeonSet const& randomDungeons =
         sLFGMgr->GetRandomAndSeasonalDungeons(level, GetPlayer()->GetSession()->Expansion());
 
     // Get player locked Dungeons
-    sLFGMgr->InitializeLockedDungeons(GetPlayer()); // pussywizard
+    sLFGMgr->InitializeLockedDungeons(GetPlayer(), GetPlayer()->GetGroup()); // pussywizard
     lfg::LfgLockMap const& lock = sLFGMgr->GetLockedDungeons(guid);
     uint32 rsize = uint32(randomDungeons.size());
     uint32 lsize = uint32(lock.size());
@@ -185,10 +188,16 @@ void WorldSession::HandleLfgPlayerLockInfoRequestOpcode(WorldPacket& /*recvData*
 
         if (quest)
         {
-            uint8 playerLevel = GetPlayer() ? GetPlayer()->getLevel() : 0;
+            uint8 playerLevel = GetPlayer() ? GetPlayer()->GetLevel() : 0;
+            uint8 playerLevelForXP = playerLevel;
+            sScriptMgr->OnPlayerBeforeGetLevelForXPGain(GetPlayer(), playerLevelForXP);
+
             data << uint8(done);
             data << uint32(quest->GetRewOrReqMoney(playerLevel));
-            data << uint32(quest->XPValue(playerLevel));
+            if (playerLevelForXP < GetPlayer()->GetUInt32Value(PLAYER_FIELD_MAX_LEVEL))
+                data << uint32(quest->XPValue(playerLevelForXP));
+            else
+                data << uint32(0);
             data << uint32(0);
             data << uint32(0);
             data << uint8(quest->GetRewItemsCount());
@@ -239,7 +248,7 @@ void WorldSession::HandleLfgPartyLockInfoRequestOpcode(WorldPacket&  /*recvData*
         if (pguid == guid)
             continue;
 
-        sLFGMgr->InitializeLockedDungeons(plrg); // pussywizard
+        sLFGMgr->InitializeLockedDungeons(plrg, group); // pussywizard
         lockMap[pguid] = sLFGMgr->GetLockedDungeons(pguid);
     }
 
@@ -410,7 +419,7 @@ void WorldSession::SendLfgRoleCheckUpdate(lfg::LfgRoleCheck const& roleCheck)
         data << uint8(roles > 0);                          // Ready
         data << uint32(roles);                             // Roles
         Player* player = ObjectAccessor::FindConnectedPlayer(guid);
-        data << uint8(player ? player->getLevel() : 0);    // Level
+        data << uint8(player ? player->GetLevel() : 0);    // Level
 
         for (lfg::LfgRolesMap::const_iterator it = roleCheck.roles.begin(); it != roleCheck.roles.end(); ++it)
         {
@@ -423,7 +432,7 @@ void WorldSession::SendLfgRoleCheckUpdate(lfg::LfgRoleCheck const& roleCheck)
             data << uint8(roles > 0);                      // Ready
             data << uint32(roles);                         // Roles
             player = ObjectAccessor::FindConnectedPlayer(guid);
-            data << uint8(player ? player->getLevel() : 0);// Level
+            data << uint8(player ? player->GetLevel() : 0);// Level
         }
     }
     SendPacket(&data);
@@ -473,7 +482,9 @@ void WorldSession::SendLfgPlayerReward(lfg::LfgPlayerRewardData const& rewardDat
 
     uint8 itemNum = rewardData.quest->GetRewItemsCount();
 
-    uint8 playerLevel = GetPlayer() ? GetPlayer()->getLevel() : 0;
+    uint8 playerLevel = GetPlayer() ? GetPlayer()->GetLevel() : 0;
+    uint8 playerLevelForXP = playerLevel;
+    sScriptMgr->OnPlayerBeforeGetLevelForXPGain(GetPlayer(), playerLevelForXP);
 
     WorldPacket data(SMSG_LFG_PLAYER_REWARD, 4 + 4 + 1 + 4 + 4 + 4 + 4 + 4 + 1 + itemNum * (4 + 4 + 4));
     data << uint32(rewardData.rdungeonEntry);              // Random Dungeon Finished
@@ -481,7 +492,7 @@ void WorldSession::SendLfgPlayerReward(lfg::LfgPlayerRewardData const& rewardDat
     data << uint8(rewardData.done);
     data << uint32(1);
     data << uint32(rewardData.quest->GetRewOrReqMoney(playerLevel));
-    data << uint32(rewardData.quest->XPValue(playerLevel));
+    data << uint32(rewardData.quest->XPValue(playerLevelForXP));
     data << uint32(0);
     data << uint32(0);
     data << uint8(itemNum);

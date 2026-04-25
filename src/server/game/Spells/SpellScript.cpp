@@ -1,14 +1,14 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
@@ -25,7 +25,7 @@ bool _SpellScript::_Validate(SpellInfo const* entry)
 {
     if (!Validate(entry))
     {
-        LOG_ERROR("scripts.spells", "_SpellScript::_Validate: Spell `{}` did not pass Validate() function of script `{}` - script will not be added to the spell", entry->Id, m_scriptName->c_str());
+        LOG_ERROR("spells.scripts", "_SpellScript::_Validate: Spell `{}` did not pass Validate() function of script `{}` - script will not be added to the spell", entry->Id, m_scriptName->c_str());
         return false;
     }
     return true;
@@ -35,7 +35,7 @@ bool _SpellScript::_ValidateSpellInfo(uint32 spellId)
 {
     if (!sSpellMgr->GetSpellInfo(spellId))
     {
-        LOG_ERROR("scripts.spells", "_SpellScript::ValidateSpellInfo: Spell {} does not exist.", spellId);
+        LOG_ERROR("spells.scripts", "_SpellScript::ValidateSpellInfo: Spell {} does not exist.", spellId);
         return false;
     }
 
@@ -75,7 +75,7 @@ _SpellScript::EffectHook::EffectHook(uint8 _effIndex)
     effIndex = _effIndex;
 }
 
-uint8 _SpellScript::EffectHook::GetAffectedEffectsMask(SpellInfo const* spellEntry)
+uint8 _SpellScript::EffectHook::GetAffectedEffectsMask(SpellInfo const* spellInfo)
 {
     uint8 mask = 0;
     if ((effIndex == EFFECT_ALL) || (effIndex == EFFECT_FIRST_FOUND))
@@ -84,21 +84,21 @@ uint8 _SpellScript::EffectHook::GetAffectedEffectsMask(SpellInfo const* spellEnt
         {
             if ((effIndex == EFFECT_FIRST_FOUND) && mask)
                 return mask;
-            if (CheckEffect(spellEntry, i))
+            if (CheckEffect(spellInfo, i))
                 mask |= (uint8)1 << i;
         }
     }
     else
     {
-        if (CheckEffect(spellEntry, effIndex))
+        if (CheckEffect(spellInfo, effIndex))
             mask |= (uint8)1 << effIndex;
     }
     return mask;
 }
 
-bool _SpellScript::EffectHook::IsEffectAffected(SpellInfo const* spellEntry, uint8 effIndex)
+bool _SpellScript::EffectHook::IsEffectAffected(SpellInfo const* spellInfo, uint8 effIndex)
 {
-    return GetAffectedEffectsMask(spellEntry) & 1 << effIndex;
+    return GetAffectedEffectsMask(spellInfo) & 1 << effIndex;
 }
 
 std::string _SpellScript::EffectHook::EffIndexToString()
@@ -119,13 +119,13 @@ std::string _SpellScript::EffectHook::EffIndexToString()
     return "Invalid Value";
 }
 
-bool _SpellScript::EffectNameCheck::Check(SpellInfo const* spellEntry, uint8 effIndex)
+bool _SpellScript::EffectNameCheck::Check(SpellInfo const* spellInfo, uint8 effIndex)
 {
-    if (!spellEntry->Effects[effIndex].Effect && !effName)
+    if (!spellInfo->Effects[effIndex].Effect && !effName)
         return true;
-    if (!spellEntry->Effects[effIndex].Effect)
+    if (!spellInfo->Effects[effIndex].Effect)
         return false;
-    return (effName == SPELL_EFFECT_ANY) || (spellEntry->Effects[effIndex].Effect == effName);
+    return (effName == SPELL_EFFECT_ANY) || (spellInfo->Effects[effIndex].Effect == effName);
 }
 
 std::string _SpellScript::EffectNameCheck::ToString()
@@ -136,18 +136,18 @@ std::string _SpellScript::EffectNameCheck::ToString()
             return "SPELL_EFFECT_ANY";
         default:
             char num[10];
-            sprintf (num, "%u", effName);
+            snprintf(num, sizeof(num), "%u", effName);
             return num;
     }
 }
 
-bool _SpellScript::EffectAuraNameCheck::Check(SpellInfo const* spellEntry, uint8 effIndex)
+bool _SpellScript::EffectAuraNameCheck::Check(SpellInfo const* spellInfo, uint8 effIndex)
 {
-    if (!spellEntry->Effects[effIndex].ApplyAuraName && !effAurName)
+    if (!spellInfo->Effects[effIndex].ApplyAuraName && !effAurName)
         return true;
-    if (!spellEntry->Effects[effIndex].ApplyAuraName)
+    if (!spellInfo->Effects[effIndex].ApplyAuraName)
         return false;
-    return (effAurName == SPELL_AURA_ANY) || (spellEntry->Effects[effIndex].ApplyAuraName == effAurName);
+    return (effAurName == SPELL_AURA_ANY) || (spellInfo->Effects[effIndex].ApplyAuraName == effAurName);
 }
 
 std::string _SpellScript::EffectAuraNameCheck::ToString()
@@ -158,7 +158,7 @@ std::string _SpellScript::EffectAuraNameCheck::ToString()
             return "SPELL_AURA_ANY";
         default:
             char num[10];
-            sprintf (num, "%u", effAurName);
+            snprintf(num, sizeof(num), "%u", effAurName);
             return num;
     }
 }
@@ -194,9 +194,9 @@ std::string SpellScript::EffectHandler::ToString()
     return "Index: " + EffIndexToString() + " Name: " + _SpellScript::EffectNameCheck::ToString();
 }
 
-bool SpellScript::EffectHandler::CheckEffect(SpellInfo const* spellEntry, uint8 effIndex)
+bool SpellScript::EffectHandler::CheckEffect(SpellInfo const* spellInfo, uint8 effIndex)
 {
-    return _SpellScript::EffectNameCheck::Check(spellEntry, effIndex);
+    return _SpellScript::EffectNameCheck::Check(spellInfo, effIndex);
 }
 
 void SpellScript::EffectHandler::Call(SpellScript* spellScript, SpellEffIndex effIndex)
@@ -234,13 +234,13 @@ std::string SpellScript::TargetHook::ToString()
     return oss.str();
 }
 
-bool SpellScript::TargetHook::CheckEffect(SpellInfo const* spellEntry, uint8 effIndex)
+bool SpellScript::TargetHook::CheckEffect(SpellInfo const* spellInfo, uint8 effIndex)
 {
     if (!targetType)
         return false;
 
-    if (spellEntry->Effects[effIndex].TargetA.GetTarget() != targetType &&
-            spellEntry->Effects[effIndex].TargetB.GetTarget() != targetType)
+    if (spellInfo->Effects[effIndex].TargetA.GetTarget() != targetType &&
+            spellInfo->Effects[effIndex].TargetB.GetTarget() != targetType)
         return false;
 
     SpellImplicitTargetInfo targetInfo(targetType);
@@ -733,9 +733,13 @@ bool AuraScript::_Validate(SpellInfo const* entry)
         if (!entry->HasEffect(SPELL_EFFECT_APPLY_AURA) && !entry->HasAreaAuraEffect())
             LOG_ERROR("spells.scripts", "Spell `{}` of script `{}` does not have apply aura effect - handler bound to hook `DoCheckProc` of AuraScript won't be executed", entry->Id, m_scriptName->c_str());
 
-    for (std::list<CheckProcHandler>::iterator itr = DoCheckAfterProc.begin(); itr != DoCheckAfterProc.end(); ++itr)
+    for (std::list<CheckEffectProcHandler>::iterator itr = DoCheckEffectProc.begin(); itr != DoCheckEffectProc.end(); ++itr)
+        if (!itr->GetAffectedEffectsMask(entry))
+            LOG_ERROR("spells.scripts", "Spell `{}` Effect `{}` of script `{}` did not match dbc effect data - handler bound to hook `DoCheckEffectProc` of AuraScript won't be executed", entry->Id, itr->ToString(), m_scriptName->c_str());
+
+    for (std::list<AfterCheckProcHandler>::iterator itr = DoAfterCheckProc.begin(); itr != DoAfterCheckProc.end(); ++itr)
         if (!entry->HasEffect(SPELL_EFFECT_APPLY_AURA) && !entry->HasAreaAuraEffect())
-            LOG_ERROR("spells.scripts", "Spell `{}` of script `{}` does not have apply aura effect - handler bound to hook `DoCheckAfterProc` of AuraScript won't be executed", entry->Id, m_scriptName->c_str());
+            LOG_ERROR("spells.scripts", "Spell `{}` of script `{}` does not have apply aura effect - handler bound to hook `DoAfterCheckProc` of AuraScript won't be executed", entry->Id, m_scriptName->c_str());
 
     for (std::list<AuraProcHandler>::iterator itr = DoPrepareProc.begin(); itr != DoPrepareProc.end(); ++itr)
         if (!entry->HasEffect(SPELL_EFFECT_APPLY_AURA) && !entry->HasAreaAuraEffect())
@@ -785,9 +789,9 @@ AuraScript::EffectBase::EffectBase(uint8 _effIndex, uint16 _effName)
 {
 }
 
-bool AuraScript::EffectBase::CheckEffect(SpellInfo const* spellEntry, uint8 effIndex)
+bool AuraScript::EffectBase::CheckEffect(SpellInfo const* spellInfo, uint8 effIndex)
 {
-    return _SpellScript::EffectAuraNameCheck::Check(spellEntry, effIndex);
+    return _SpellScript::EffectAuraNameCheck::Check(spellInfo, effIndex);
 }
 
 std::string AuraScript::EffectBase::ToString()
@@ -904,6 +908,27 @@ AuraScript::CheckProcHandler::CheckProcHandler(AuraCheckProcFnType handlerScript
 bool AuraScript::CheckProcHandler::Call(AuraScript* auraScript, ProcEventInfo& eventInfo)
 {
     return (auraScript->*_HandlerScript)(eventInfo);
+}
+
+AuraScript::CheckEffectProcHandler::CheckEffectProcHandler(AuraCheckEffectProcFnType handlerScript, uint8 effIndex, uint16 effName)
+    : EffectBase(effIndex, effName)
+{
+    _HandlerScript = handlerScript;
+}
+
+bool AuraScript::CheckEffectProcHandler::Call(AuraScript* auraScript, AuraEffect const* aurEff, ProcEventInfo& eventInfo)
+{
+    return (auraScript->*_HandlerScript)(aurEff, eventInfo);
+}
+
+AuraScript::AfterCheckProcHandler::AfterCheckProcHandler(AuraAfterCheckProcFnType handlerScript)
+{
+    _HandlerScript = handlerScript;
+}
+
+bool AuraScript::AfterCheckProcHandler::Call(AuraScript* auraScript, ProcEventInfo& eventInfo, bool isTriggeredAtSpellProcEvent)
+{
+    return (auraScript->*_HandlerScript)(eventInfo, isTriggeredAtSpellProcEvent);
 }
 
 AuraScript::AuraProcHandler::AuraProcHandler(AuraProcFnType handlerScript)
@@ -1027,9 +1052,9 @@ DynamicObject* AuraScript::GetDynobjOwner() const
     return m_aura->GetDynobjOwner();
 }
 
-void AuraScript::Remove(uint32 removeMode)
+void AuraScript::Remove(AuraRemoveMode removeMode)
 {
-    m_aura->Remove((AuraRemoveMode)removeMode);
+    m_aura->Remove(removeMode);
 }
 
 Aura* AuraScript::GetAura() const
@@ -1167,7 +1192,8 @@ Unit* AuraScript::GetTarget() const
         case AURA_SCRIPT_HOOK_EFFECT_AFTER_MANASHIELD:
         case AURA_SCRIPT_HOOK_EFFECT_SPLIT:
         case AURA_SCRIPT_HOOK_CHECK_PROC:
-        case AURA_SCRIPT_HOOK_CHECK_AFTER_PROC:
+        case AURA_SCRIPT_HOOK_CHECK_EFFECT_PROC:
+        case AURA_SCRIPT_HOOK_AFTER_CHECK_PROC:
         case AURA_SCRIPT_HOOK_PREPARE_PROC:
         case AURA_SCRIPT_HOOK_PROC:
         case AURA_SCRIPT_HOOK_AFTER_PROC:

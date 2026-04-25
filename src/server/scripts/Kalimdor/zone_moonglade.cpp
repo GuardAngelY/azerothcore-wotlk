@@ -1,41 +1,24 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-/* ScriptData
-SDName: Moonglade
-SD%Complete: 100
-SDComment: Quest support: 30, 272, 5929, 5930, 10965. Special Flight Paths for Druid class.
-SDCategory: Moonglade
-EndScriptData */
-
-/* ContentData
-npc_bunthen_plainswind
-npc_great_bear_spirit
-npc_silva_filnaveth
-npc_clintar_spirit
-npc_clintar_dreamwalker
-EndContentData */
-
 #include "Cell.h"
-#include "CellImpl.h"
+#include "CreatureScript.h"
 #include "GridNotifiers.h"
-#include "GridNotifiersImpl.h"
 #include "Player.h"
-#include "ScriptMgr.h"
 #include "ScriptedCreature.h"
 #include "ScriptedEscortAI.h"
 #include "ScriptedGossip.h"
@@ -65,7 +48,7 @@ public:
         {
             case GOSSIP_ACTION_INFO_DEF + 1:
                 CloseGossipMenuFor(player);
-                if (player->getClass() == CLASS_DRUID && player->GetTeamId() == TEAM_HORDE)
+                if (player->IsClass(CLASS_DRUID, CLASS_CONTEXT_TAXI) && player->GetTeamId() == TEAM_HORDE)
                     player->ActivateTaxiPathTo(TAXI_PATH_ID_HORDE);
                 break;
             case GOSSIP_ACTION_INFO_DEF + 2:
@@ -80,82 +63,43 @@ public:
 
     bool OnGossipHello(Player* player, Creature* creature) override
     {
-        if (player->getClass() != CLASS_DRUID)
+        if (player->GetTeamId() != TEAM_HORDE)
         {
-            SendGossipMenuFor(player, 4916, creature->GetGUID());
-        }
-        else if (player->GetTeamId() != TEAM_HORDE)
-        {
-            if (player->GetQuestStatus(QUEST_SEA_LION_ALLY) == QUEST_STATUS_INCOMPLETE)
+            if (player->IsClass(CLASS_DRUID, CLASS_CONTEXT_QUEST) && player->GetQuestStatus(QUEST_SEA_LION_ALLY) == QUEST_STATUS_INCOMPLETE)
             {
                 AddGossipItemFor(player, 4042, 2, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 2);
             }
 
-            SendGossipMenuFor(player, 4917, creature->GetGUID());
+            if (player->IsClass(CLASS_DRUID))
+            {
+                SendGossipMenuFor(player, 4917, creature->GetGUID());
+            }
+            else
+            {
+                SendGossipMenuFor(player, 4916, creature->GetGUID());
+            }
         }
-        else if (player->getClass() == CLASS_DRUID && player->GetTeamId() == TEAM_HORDE)
+        else if (player->GetTeamId() == TEAM_HORDE)
         {
-            AddGossipItemFor(player, 4042, 0, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+            if (player->IsClass(CLASS_DRUID, CLASS_CONTEXT_TAXI))
+            {
+                AddGossipItemFor(player, 4042, 0, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+            }
 
-            if (player->GetQuestStatus(QUEST_SEA_LION_HORDE) == QUEST_STATUS_INCOMPLETE)
+            if (player->IsClass(CLASS_DRUID, CLASS_CONTEXT_QUEST) && player->GetQuestStatus(QUEST_SEA_LION_HORDE) == QUEST_STATUS_INCOMPLETE)
             {
                 AddGossipItemFor(player, 4042, 1, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 3);
             }
 
-            SendGossipMenuFor(player, 4918, creature->GetGUID());
+            if (player->IsClass(CLASS_DRUID))
+            {
+                SendGossipMenuFor(player, 4918, creature->GetGUID());
+            }
+            else
+            {
+                SendGossipMenuFor(player, 4916, creature->GetGUID());
+            }
         }
-        return true;
-    }
-};
-
-/*######
-## npc_great_bear_spirit
-######*/
-
-class npc_great_bear_spirit : public CreatureScript
-{
-public:
-    npc_great_bear_spirit() : CreatureScript("npc_great_bear_spirit") { }
-
-    bool OnGossipSelect(Player* player, Creature* creature, uint32 /*sender*/, uint32 action) override
-    {
-        ClearGossipMenuFor(player);
-        switch (action)
-        {
-            case GOSSIP_ACTION_INFO_DEF:
-                AddGossipItemFor(player, 3881, 0, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
-                SendGossipMenuFor(player, 4721, creature->GetGUID());
-                break;
-            case GOSSIP_ACTION_INFO_DEF + 1:
-                AddGossipItemFor(player, 3883, 0, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 2);
-                SendGossipMenuFor(player, 4733, creature->GetGUID());
-                break;
-            case GOSSIP_ACTION_INFO_DEF + 2:
-                AddGossipItemFor(player, 3884, 0, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 3);
-                SendGossipMenuFor(player, 4734, creature->GetGUID());
-                break;
-            case GOSSIP_ACTION_INFO_DEF + 3:
-                SendGossipMenuFor(player, 4735, creature->GetGUID());
-                if (player->GetQuestStatus(5929) == QUEST_STATUS_INCOMPLETE)
-                    player->AreaExploredOrEventHappens(5929);
-                if (player->GetQuestStatus(5930) == QUEST_STATUS_INCOMPLETE)
-                    player->AreaExploredOrEventHappens(5930);
-                break;
-        }
-        return true;
-    }
-
-    bool OnGossipHello(Player* player, Creature* creature) override
-    {
-        //ally or horde quest
-        if (player->GetQuestStatus(5929) == QUEST_STATUS_INCOMPLETE || player->GetQuestStatus(5930) == QUEST_STATUS_INCOMPLETE)
-        {
-            AddGossipItemFor(player, 3882, 0, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF);
-            SendGossipMenuFor(player, 4719, creature->GetGUID());
-        }
-        else
-            SendGossipMenuFor(player, 4718, creature->GetGUID());
-
         return true;
     }
 };
@@ -176,7 +120,7 @@ public:
         {
             case GOSSIP_ACTION_INFO_DEF + 1:
                 CloseGossipMenuFor(player);
-                if (player->getClass() == CLASS_DRUID && player->GetTeamId() == TEAM_ALLIANCE)
+                if (player->IsClass(CLASS_DRUID, CLASS_CONTEXT_TAXI) && player->GetTeamId() == TEAM_ALLIANCE)
                     player->ActivateTaxiPathTo(TAXI_PATH_ID_ALLY);
                 break;
             case GOSSIP_ACTION_INFO_DEF + 2:
@@ -191,29 +135,41 @@ public:
 
     bool OnGossipHello(Player* player, Creature* creature) override
     {
-        if (player->getClass() != CLASS_DRUID)
+        if (player->GetTeamId() != TEAM_ALLIANCE)
         {
-            SendGossipMenuFor(player, 4913, creature->GetGUID());
-        }
-        else if (player->GetTeamId() != TEAM_ALLIANCE)
-        {
-            if (player->GetQuestStatus(QUEST_SEA_LION_HORDE) == QUEST_STATUS_INCOMPLETE)
+            if (player->IsClass(CLASS_DRUID, CLASS_CONTEXT_QUEST) && player->GetQuestStatus(QUEST_SEA_LION_HORDE) == QUEST_STATUS_INCOMPLETE)
             {
                 AddGossipItemFor(player, 4041, 2, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 2);
             }
-
-            SendGossipMenuFor(player, 4915, creature->GetGUID());
+            if (player->IsClass(CLASS_DRUID))
+            {
+                SendGossipMenuFor(player, 4915, creature->GetGUID());
+            }
+            else
+            {
+                SendGossipMenuFor(player, 4913, creature->GetGUID());
+            }
         }
-        else if (player->getClass() == CLASS_DRUID && player->GetTeamId() == TEAM_ALLIANCE)
+        else if (player->GetTeamId() == TEAM_ALLIANCE)
         {
-            AddGossipItemFor(player, 4041, 0, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+            if (player->IsClass(CLASS_DRUID, CLASS_CONTEXT_TAXI))
+            {
+                AddGossipItemFor(player, 4041, 0, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+            }
 
-            if (player->GetQuestStatus(QUEST_SEA_LION_ALLY) == QUEST_STATUS_INCOMPLETE)
+            if (player->IsClass(CLASS_DRUID, CLASS_CONTEXT_QUEST) && player->GetQuestStatus(QUEST_SEA_LION_ALLY) == QUEST_STATUS_INCOMPLETE)
             {
                 AddGossipItemFor(player, 4041, 1, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 3);
             }
 
-            SendGossipMenuFor(player, 4914, creature->GetGUID());
+            if (player->IsClass(CLASS_DRUID))
+            {
+                SendGossipMenuFor(player, 4914, creature->GetGUID());
+            }
+            else
+            {
+                SendGossipMenuFor(player, 4913, creature->GetGUID());
+            }
         }
         return true;
     }
@@ -276,7 +232,7 @@ enum ClintarSpirit
 {
     ASPECT_RAVEN                        = 22915,
 
-    // Texts for EnterCombat, the event and the end of the event are missing
+    // Texts for JustEngagedWith, the event and the end of the event are missing
     CLINTAR_SPIRIT_SAY_START            = 0,
 };
 
@@ -320,12 +276,12 @@ public:
             }
         }
 
-        void IsSummonedBy(Unit* /*summoner*/) override
+        void IsSummonedBy(WorldObject* /*summoner*/) override
         {
             std::list<Player*> playerOnQuestList;
             Acore::AnyPlayerInObjectRangeCheck checker(me, 5.0f);
             Acore::PlayerListSearcher<Acore::AnyPlayerInObjectRangeCheck> searcher(me, playerOnQuestList, checker);
-            Cell::VisitWorldObjects(me, searcher, 5.0f);
+            Cell::VisitObjects(me, searcher, 5.0f);
             for (std::list<Player*>::const_iterator itr = playerOnQuestList.begin(); itr != playerOnQuestList.end(); ++itr)
             {
                 // Check if found player target has active quest
@@ -376,7 +332,8 @@ public:
                     AddWaypoint(i, Clintar_spirit_WP[i][0], Clintar_spirit_WP[i][1], Clintar_spirit_WP[i][2], (uint32)Clintar_spirit_WP[i][4]);
                 }
                 PlayerGUID = player->GetGUID();
-                Start(true, false, PlayerGUID);
+                me->SetWalk(true);
+                Start(true, PlayerGUID);
             }
             return;
         }
@@ -387,7 +344,7 @@ public:
 
             if (!PlayerGUID)
             {
-                me->setDeathState(JUST_DIED);
+                me->setDeathState(DeathState::JustDied);
                 return;
             }
 
@@ -408,7 +365,7 @@ public:
                 Player* player = ObjectAccessor::GetPlayer(*me, PlayerGUID);
                 if (!player || player->GetQuestStatus(10965) == QUEST_STATUS_NONE)
                 {
-                    me->setDeathState(JUST_DIED);
+                    me->setDeathState(DeathState::JustDied);
                     return;
                 }
 
@@ -532,7 +489,7 @@ public:
                                 player->TalkedToCreature(me->GetEntry(), me->GetGUID());
                                 PlayerGUID.Clear();
                                 Reset();
-                                me->setDeathState(JUST_DIED);
+                                me->setDeathState(DeathState::JustDied);
                                 break;
                         }
                         break;
@@ -544,6 +501,7 @@ public:
             else if (EventOnWait) EventTimer -= diff;
         }
 
+        using CreatureAI::WaypointReached;
         void WaypointReached(uint32 waypointId) override
         {
             CurrWP = waypointId;
@@ -604,11 +562,11 @@ public:
             }
         }
 
-        void EnterCombat(Unit* /*attacker*/) override
+        void JustEngagedWith(Unit* /*attacker*/) override
         {
             events.Reset();
-            events.ScheduleEvent(EVENT_CAST_CLEAVE, urand(3000, 5000));
-            events.ScheduleEvent(EVENT_CAST_STARFALL, urand(8000, 10000));
+            events.ScheduleEvent(EVENT_CAST_CLEAVE, 3s,  5s);
+            events.ScheduleEvent(EVENT_CAST_STARFALL, 8s, 10s);
         }
 
         void JustDied(Unit* /*killer*/) override
@@ -623,7 +581,7 @@ public:
                 if (me->HasAura(SPELL_OMEN_STARFALL))
                     me->RemoveAurasDueToSpell(SPELL_OMEN_STARFALL);
 
-                events.RescheduleEvent(EVENT_CAST_STARFALL, urand(14000, 16000));
+                events.RescheduleEvent(EVENT_CAST_STARFALL, 14s, 16s);
             }
         }
 
@@ -638,12 +596,12 @@ public:
             {
                 case EVENT_CAST_CLEAVE:
                     DoCastVictim(SPELL_OMEN_CLEAVE);
-                    events.ScheduleEvent(EVENT_CAST_CLEAVE, urand(8000, 10000));
+                    events.ScheduleEvent(EVENT_CAST_CLEAVE, 8s, 10s);
                     break;
                 case EVENT_CAST_STARFALL:
                     if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0))
                         DoCast(target, SPELL_OMEN_STARFALL);
-                    events.ScheduleEvent(EVENT_CAST_STARFALL, urand(14000, 16000));
+                    events.ScheduleEvent(EVENT_CAST_STARFALL, 14s, 16s);
                     break;
             }
 
@@ -671,7 +629,7 @@ public:
         void Reset() override
         {
             events.Reset();
-            events.ScheduleEvent(EVENT_DESPAWN, 5 * MINUTE * IN_MILLISECONDS);
+            events.ScheduleEvent(EVENT_DESPAWN, 5min);
             me->SetUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
         }
 
@@ -704,7 +662,6 @@ public:
 void AddSC_moonglade()
 {
     new npc_bunthen_plainswind();
-    new npc_great_bear_spirit();
     new npc_silva_filnaveth();
     new npc_clintar_spirit();
     new npc_omen();

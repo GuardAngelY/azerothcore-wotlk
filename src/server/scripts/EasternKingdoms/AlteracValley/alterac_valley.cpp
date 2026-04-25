@@ -1,14 +1,14 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
@@ -16,7 +16,7 @@
  */
 
 #include "BattlegroundAV.h"
-#include "ScriptMgr.h"
+#include "CreatureScript.h"
 #include "ScriptedCreature.h"
 
 enum Spells
@@ -95,12 +95,12 @@ public:
         void Reset() override
         {
             events.Reset();
-            events.ScheduleEvent(EVENT_CHARGE_TARGET, urand(2 * IN_MILLISECONDS, 12 * IN_MILLISECONDS));
-            events.ScheduleEvent(EVENT_CLEAVE, urand(1 * IN_MILLISECONDS, 11 * IN_MILLISECONDS));
-            events.ScheduleEvent(EVENT_DEMORALIZING_SHOUT, 2000);
-            events.ScheduleEvent(EVENT_WHIRLWIND, urand(5 * IN_MILLISECONDS, 20 * IN_MILLISECONDS));
-            events.ScheduleEvent(EVENT_ENRAGE, urand(5 * IN_MILLISECONDS, 20 * IN_MILLISECONDS));
-            events.ScheduleEvent(EVENT_CHECK_RESET, 5000);
+            events.ScheduleEvent(EVENT_CHARGE_TARGET, 2s, 12s);
+            events.ScheduleEvent(EVENT_CLEAVE, 1s, 11s);
+            events.ScheduleEvent(EVENT_DEMORALIZING_SHOUT, 2s);
+            events.ScheduleEvent(EVENT_WHIRLWIND, 5s, 20s);
+            events.ScheduleEvent(EVENT_ENRAGE, 5s, 20s);
+            events.ScheduleEvent(EVENT_CHECK_RESET, 5s);
 
             _hasAura = false;
             _attacked = false;
@@ -187,23 +187,23 @@ public:
                 {
                     case EVENT_CHARGE_TARGET:
                         DoCastVictim(SPELL_CHARGE);
-                        events.ScheduleEvent(EVENT_CHARGE, urand(10 * IN_MILLISECONDS, 25 * IN_MILLISECONDS));
+                        events.ScheduleEvent(EVENT_CHARGE, 10s, 25s);
                         break;
                     case EVENT_CLEAVE:
                         DoCastVictim(SPELL_CLEAVE);
-                        events.ScheduleEvent(EVENT_CLEAVE, urand(10 * IN_MILLISECONDS, 16 * IN_MILLISECONDS));
+                        events.ScheduleEvent(EVENT_CLEAVE, 10s, 16s);
                         break;
                     case EVENT_DEMORALIZING_SHOUT:
                         DoCast(me, SPELL_DEMORALIZING_SHOUT);
-                        events.ScheduleEvent(EVENT_DEMORALIZING_SHOUT, urand(10 * IN_MILLISECONDS, 15 * IN_MILLISECONDS));
+                        events.ScheduleEvent(EVENT_DEMORALIZING_SHOUT, 10s, 15s);
                         break;
                     case EVENT_WHIRLWIND:
                         DoCast(me, SPELL_WHIRLWIND);
-                        events.ScheduleEvent(EVENT_WHIRLWIND, urand(10 * IN_MILLISECONDS, 25 * IN_MILLISECONDS));
+                        events.ScheduleEvent(EVENT_WHIRLWIND, 10s, 25s);
                         break;
                     case EVENT_ENRAGE:
                         DoCast(me, SPELL_ENRAGE);
-                        events.ScheduleEvent(EVENT_ENRAGE, urand(10 * IN_MILLISECONDS, 30 * IN_MILLISECONDS));
+                        events.ScheduleEvent(EVENT_ENRAGE, 10s, 30s);
                         break;
                     case EVENT_CHECK_RESET:
                         {
@@ -213,7 +213,7 @@ public:
                                 ScriptedAI::EnterEvadeMode();
                                 return;
                             }
-                            events.ScheduleEvent(EVENT_CHECK_RESET, 5000);
+                            events.ScheduleEvent(EVENT_CHECK_RESET, 5s);
                             break;
                         }
                 }

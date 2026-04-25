@@ -1,14 +1,14 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
@@ -34,23 +34,34 @@ void WorldSession::HandleInspectArenaTeamsOpcode(WorldPacket& recvData)
     recvData >> guid;
     LOG_DEBUG("network", "Inspect Arena stats ({})", guid.ToString());
 
-    if (Player* player = ObjectAccessor::FindPlayer(guid))
+    Player* player = ObjectAccessor::FindPlayer(guid);
+    if (!player)
     {
-        for (uint8 i = 0; i < MAX_ARENA_SLOT; ++i)
+        return;
+    }
+
+    if (!GetPlayer()->IsWithinDistInMap(player, INSPECT_DISTANCE, false))
+    {
+        return;
+    }
+
+    if (GetPlayer()->IsValidAttackTarget(player))
+    {
+        return;
+    }
+
+    for (uint8 i = 0; i < MAX_ARENA_SLOT; ++i)
+    {
+        if (uint32 a_id = player->GetArenaTeamId(i))
         {
-            if (uint32 a_id = player->GetArenaTeamId(i))
-            {
-                if (ArenaTeam* arenaTeam = sArenaTeamMgr->GetArenaTeamById(a_id))
-                    arenaTeam->Inspect(this, player->GetGUID());
-            }
+            if (ArenaTeam* arenaTeam = sArenaTeamMgr->GetArenaTeamById(a_id))
+                arenaTeam->Inspect(this, player->GetGUID());
         }
     }
 }
 
 void WorldSession::HandleArenaTeamQueryOpcode(WorldPacket& recvData)
 {
-    LOG_DEBUG("network", "WORLD: Received CMSG_ARENA_TEAM_QUERY");
-
     uint32 arenaTeamId;
     recvData >> arenaTeamId;
 
@@ -63,8 +74,6 @@ void WorldSession::HandleArenaTeamQueryOpcode(WorldPacket& recvData)
 
 void WorldSession::HandleArenaTeamRosterOpcode(WorldPacket& recvData)
 {
-    LOG_DEBUG("network", "WORLD: Received CMSG_ARENA_TEAM_ROSTER");
-
     uint32 arenaTeamId;                                     // arena team id
     recvData >> arenaTeamId;
 
@@ -97,7 +106,7 @@ void WorldSession::HandleArenaTeamInviteOpcode(WorldPacket& recvData)
         return;
     }
 
-    if (player->getLevel() < sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL))
+    if (player->GetLevel() < sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL))
     {
         SendArenaTeamCommandResult(ERR_ARENA_TEAM_CREATE_S, "", invitedName, ERR_ARENA_TEAM_TARGET_TOO_LOW_S);
         return;
@@ -120,7 +129,7 @@ void WorldSession::HandleArenaTeamInviteOpcode(WorldPacket& recvData)
     if (player->GetSocial()->HasIgnore(GetPlayer()->GetGUID()))
         return;
 
-    if (!sWorld->getBoolConfig(CONFIG_ALLOW_TWO_SIDE_INTERACTION_GUILD) && player->GetTeamId() != GetPlayer()->GetTeamId())
+    if (!sWorld->getBoolConfig(CONFIG_ALLOW_TWO_SIDE_INTERACTION_ARENA) && player->GetTeamId() != GetPlayer()->GetTeamId())
     {
         SendArenaTeamCommandResult(ERR_ARENA_TEAM_INVITE_SS, "", "", ERR_ARENA_TEAM_NOT_ALLIED);
         return;
@@ -151,7 +160,7 @@ void WorldSession::HandleArenaTeamInviteOpcode(WorldPacket& recvData)
     WorldPacket data(SMSG_ARENA_TEAM_INVITE, (8 + 10));
     data << GetPlayer()->GetName();
     data << arenaTeam->GetName();
-    player->GetSession()->SendPacket(&data);
+    player->SendDirectMessage(&data);
 
     LOG_DEBUG("network", "WORLD: Sent SMSG_ARENA_TEAM_INVITE");
 }
@@ -172,7 +181,7 @@ void WorldSession::HandleArenaTeamAcceptOpcode(WorldPacket& /*recvData*/)
     }
 
     // Only allow members of the other faction to join the team if cross faction interaction is enabled
-    if (!sWorld->getBoolConfig(CONFIG_ALLOW_TWO_SIDE_INTERACTION_GUILD) && _player->GetTeamId() != sCharacterCache->GetCharacterTeamByGuid(arenaTeam->GetCaptain()))
+    if (!sWorld->getBoolConfig(CONFIG_ALLOW_TWO_SIDE_INTERACTION_ARENA) && _player->GetTeamId() != sCharacterCache->GetCharacterTeamByGuid(arenaTeam->GetCaptain()))
     {
         SendArenaTeamCommandResult(ERR_ARENA_TEAM_CREATE_S, "", "", ERR_ARENA_TEAM_NOT_ALLIED);
         return;

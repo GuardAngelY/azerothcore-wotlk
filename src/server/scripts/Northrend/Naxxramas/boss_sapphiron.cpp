@@ -1,24 +1,25 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "CreatureScript.h"
 #include "Player.h"
-#include "ScriptMgr.h"
 #include "ScriptedCreature.h"
 #include "SpellScript.h"
+#include "SpellScriptLoader.h"
 #include "naxxramas.h"
 
 enum Yells
@@ -32,14 +33,11 @@ enum Yells
 enum Spells
 {
     // Fight
-    SPELL_FROST_AURA_10             = 28531,
-    SPELL_FROST_AURA_25             = 55799,
+    SPELL_FROST_AURA                = 28531,
     SPELL_CLEAVE                    = 19983,
-    SPELL_TAIL_SWEEP_10             = 55697,
-    SPELL_TAIL_SWEEP_25             = 55696,
+    SPELL_TAIL_SWEEP                = 55697,
     SPELL_SUMMON_BLIZZARD           = 28560,
-    SPELL_LIFE_DRAIN_10             = 28542,
-    SPELL_LIFE_DRAIN_25             = 55665,
+    SPELL_LIFE_DRAIN                = 28542,
     SPELL_BERSERK                   = 26662,
 
     // Ice block
@@ -91,12 +89,9 @@ public:
     struct boss_sapphironAI : public BossAI
     {
         explicit boss_sapphironAI(Creature* c) : BossAI(c, BOSS_SAPPHIRON)
-        {
-            pInstance = me->GetInstanceScript();
-        }
+        {}
 
         EventMap events;
-        InstanceScript* pInstance;
         uint8 iceboltCount{};
         uint32 spawnTimer{};
         GuidList blockList;
@@ -133,6 +128,7 @@ public:
             spawnTimer = 0;
             currentTarget.Clear();
             blockList.clear();
+            me->SetAnimTier(AnimTier::Fly);
         }
 
         void EnterCombatSelfFunction()
@@ -141,7 +137,7 @@ public:
             if (PlList.IsEmpty())
                 return;
 
-            for (const auto& i : PlList)
+            for (auto const& i : PlList)
             {
                 if (Player* player = i.GetSource())
                 {
@@ -158,18 +154,18 @@ public:
             }
         }
 
-        void EnterCombat(Unit* who) override
+        void JustEngagedWith(Unit* who) override
         {
-            BossAI::EnterCombat(who);
+            BossAI::JustEngagedWith(who);
             EnterCombatSelfFunction();
-            me->CastSpell(me, RAID_MODE(SPELL_FROST_AURA_10, SPELL_FROST_AURA_25), true);
-            events.ScheduleEvent(EVENT_BERSERK, 900000);
-            events.ScheduleEvent(EVENT_CLEAVE, 5000);
-            events.ScheduleEvent(EVENT_TAIL_SWEEP, 10000);
-            events.ScheduleEvent(EVENT_LIFE_DRAIN, 17000);
-            events.ScheduleEvent(EVENT_BLIZZARD, 17000);
-            events.ScheduleEvent(EVENT_FLIGHT_START, 45000);
-            events.ScheduleEvent(EVENT_HUNDRED_CLUB, 5000);
+            me->CastSpell(me, SPELL_FROST_AURA, true);
+            events.ScheduleEvent(EVENT_BERSERK, 15min);
+            events.ScheduleEvent(EVENT_CLEAVE, 5s);
+            events.ScheduleEvent(EVENT_TAIL_SWEEP, 10s);
+            events.ScheduleEvent(EVENT_LIFE_DRAIN, 17s);
+            events.ScheduleEvent(EVENT_BLIZZARD, 17s);
+            events.ScheduleEvent(EVENT_FLIGHT_START, 45s);
+            events.ScheduleEvent(EVENT_HUNDRED_CLUB, 5s);
         }
 
         void JustDied(Unit*  killer) override
@@ -190,7 +186,7 @@ public:
         {
             if (type == POINT_MOTION_TYPE && id == POINT_CENTER)
             {
-                events.ScheduleEvent(EVENT_FLIGHT_LIFTOFF, 500);
+                events.ScheduleEvent(EVENT_FLIGHT_LIFTOFF, 500ms);
             }
         }
 
@@ -220,10 +216,8 @@ public:
 
         void KilledUnit(Unit* who) override
         {
-            if (who->GetTypeId() == TYPEID_PLAYER && pInstance)
-            {
-                pInstance->SetData(DATA_IMMORTAL_FAIL, 0);
-            }
+            if (who->IsPlayer())
+                instance->StorePersistentData(PERSISTENT_DATA_IMMORTAL_FAIL, 1);
         }
 
         void UpdateAI(uint32 diff) override
@@ -259,15 +253,15 @@ public:
                     return;
                 case EVENT_CLEAVE:
                     me->CastSpell(me->GetVictim(), SPELL_CLEAVE, false);
-                    events.RepeatEvent(10000);
+                    events.Repeat(10s);
                     return;
                 case EVENT_TAIL_SWEEP:
-                    me->CastSpell(me, RAID_MODE(SPELL_TAIL_SWEEP_10, SPELL_TAIL_SWEEP_25), false);
-                    events.RepeatEvent(10000);
+                    me->CastSpell(me, SPELL_TAIL_SWEEP, false);
+                    events.Repeat(10s);
                     return;
                 case EVENT_LIFE_DRAIN:
-                    me->CastCustomSpell(RAID_MODE(SPELL_LIFE_DRAIN_10, SPELL_LIFE_DRAIN_25), SPELLVALUE_MAX_TARGETS, RAID_MODE(2, 5), me, false);
-                    events.RepeatEvent(24000);
+                    me->CastCustomSpell(SPELL_LIFE_DRAIN, SPELLVALUE_MAX_TARGETS, RAID_MODE(2, 5), me, false);
+                    events.Repeat(24s);
                     return;
                 case EVENT_BLIZZARD:
                     {
@@ -284,7 +278,7 @@ public:
                         {
                             cr->GetMotionMaster()->MoveRandom(40);
                         }
-                        events.RepeatEvent(RAID_MODE(8000, 6500));
+                        events.Repeat(RAID_MODE(8000ms, 6500ms));
                         return;
                     }
                 case EVENT_FLIGHT_START:
@@ -292,13 +286,13 @@ public:
                     {
                         return;
                     }
-                    events.RepeatEvent(45000);
-                    events.DelayEvents(35000);
+                    events.Repeat(45s);
+                    events.DelayEvents(35s);
                     me->SetReactState(REACT_PASSIVE);
                     me->AttackStop();
                     float x, y, z, o;
                     me->GetHomePosition(x, y, z, o);
-                    me->GetMotionMaster()->MovePoint(POINT_CENTER, x, y, z);
+                    me->GetMotionMaster()->MovePoint(POINT_CENTER, x, y, z, FORCED_MOVEMENT_NONE, 0.f, o);
                     return;
                 case EVENT_FLIGHT_LIFTOFF:
                     Talk(EMOTE_AIR_PHASE);
@@ -307,7 +301,7 @@ public:
                     me->HandleEmoteCommand(EMOTE_ONESHOT_LIFTOFF);
                     me->SetDisableGravity(true);
                     currentTarget.Clear();
-                    events.ScheduleEvent(EVENT_FLIGHT_ICEBOLT, 3000);
+                    events.ScheduleEvent(EVENT_FLIGHT_ICEBOLT, 3s);
                     iceboltCount = RAID_MODE(2, 3);
                     return;
                 case EVENT_FLIGHT_ICEBOLT:
@@ -321,17 +315,17 @@ public:
                         }
 
                         std::vector<Unit*> targets;
-                        auto i = me->GetThreatMgr().GetThreatList().begin();
-                        for (; i != me->GetThreatMgr().GetThreatList().end(); ++i)
+                        auto i = me->GetThreatMgr().GetUnsortedThreatList().begin();
+                        for (; i != me->GetThreatMgr().GetUnsortedThreatList().end(); ++i)
                         {
-                            if ((*i)->getTarget()->GetTypeId() == TYPEID_PLAYER)
+                            if ((*i)->GetVictim()->IsPlayer())
                             {
                                 bool inList = false;
                                 if (!blockList.empty())
                                 {
                                     for (GuidList::const_iterator itr = blockList.begin(); itr != blockList.end(); ++itr)
                                     {
-                                        if ((*i)->getTarget()->GetGUID() == *itr)
+                                        if ((*i)->GetVictim()->GetGUID() == *itr)
                                         {
                                             inList = true;
                                             break;
@@ -340,7 +334,7 @@ public:
                                 }
                                 if (!inList)
                                 {
-                                    targets.push_back((*i)->getTarget());
+                                    targets.push_back((*i)->GetVictim());
                                 }
                             }
                         }
@@ -353,11 +347,11 @@ public:
                             blockList.push_back((*itr)->GetGUID());
                             currentTarget = (*itr)->GetGUID();
                             --iceboltCount;
-                            events.ScheduleEvent(EVENT_FLIGHT_ICEBOLT, (me->GetExactDist(*itr) / 13.0f)*IN_MILLISECONDS);
+                            events.ScheduleEvent(EVENT_FLIGHT_ICEBOLT, Seconds(uint32(me->GetExactDist(*itr) / 13.0f)));
                         }
                         else
                         {
-                            events.ScheduleEvent(EVENT_FLIGHT_BREATH, 1000);
+                            events.ScheduleEvent(EVENT_FLIGHT_BREATH, 1s);
                         }
                         return;
                     }
@@ -365,11 +359,11 @@ public:
                     currentTarget.Clear();
                     Talk(EMOTE_BREATH);
                     me->CastSpell(me, SPELL_FROST_MISSILE, false);
-                    events.ScheduleEvent(EVENT_FLIGHT_SPELL_EXPLOSION, 8500);
+                    events.ScheduleEvent(EVENT_FLIGHT_SPELL_EXPLOSION, 8500ms);
                     return;
                 case EVENT_FLIGHT_SPELL_EXPLOSION:
                     me->CastSpell(me, SPELL_FROST_EXPLOSION, true);
-                    events.ScheduleEvent(EVENT_FLIGHT_START_LAND, 3000);
+                    events.ScheduleEvent(EVENT_FLIGHT_START_LAND, 3s);
                     return;
                 case EVENT_FLIGHT_START_LAND:
                     if (!blockList.empty())
@@ -384,12 +378,12 @@ public:
                     }
                     blockList.clear();
                     me->RemoveAllGameObjects();
-                    events.ScheduleEvent(EVENT_LAND, 1000);
+                    events.ScheduleEvent(EVENT_LAND, 1s);
                     return;
                 case EVENT_LAND:
                     me->HandleEmoteCommand(EMOTE_ONESHOT_LAND);
                     me->SetDisableGravity(false);
-                    events.ScheduleEvent(EVENT_GROUND, 1500);
+                    events.ScheduleEvent(EVENT_GROUND, 1500ms);
                     return;
                 case EVENT_GROUND:
                     Talk(EMOTE_GROUND_PHASE);
@@ -399,15 +393,15 @@ public:
                 case EVENT_HUNDRED_CLUB:
                     {
                         Map::PlayerList const& pList = me->GetMap()->GetPlayers();
-                        for (const auto& itr : pList)
+                        for (auto const& itr : pList)
                         {
-                            if (itr.GetSource()->GetResistance(SPELL_SCHOOL_FROST) > 100 && pInstance)
+                            if (itr.GetSource()->GetResistance(SPELL_SCHOOL_FROST) > 100)
                             {
-                                pInstance->SetData(DATA_HUNDRED_CLUB, 0);
+                                instance->SetData(DATA_HUNDRED_CLUB, 0);
                                 return;
                             }
                         }
-                        events.RepeatEvent(5000);
+                        events.Repeat(5s);
                         return;
                     }
             }
@@ -416,50 +410,39 @@ public:
     };
 };
 
-class spell_sapphiron_frost_explosion : public SpellScriptLoader
+class spell_sapphiron_frost_explosion : public SpellScript
 {
-public:
-    spell_sapphiron_frost_explosion() : SpellScriptLoader("spell_sapphiron_frost_explosion") { }
+    PrepareSpellScript(spell_sapphiron_frost_explosion);
 
-    class spell_sapphiron_frost_explosion_SpellScript : public SpellScript
+    void FilterTargets(std::list<WorldObject*>& targets)
     {
-        PrepareSpellScript(spell_sapphiron_frost_explosion_SpellScript);
+        Unit* caster = GetCaster();
+        if (!caster || !caster->ToCreature())
+            return;
 
-        void FilterTargets(std::list<WorldObject*>& targets)
+        std::list<WorldObject*> tmplist;
+        for (auto& target : targets)
         {
-            Unit* caster = GetCaster();
-            if (!caster || !caster->ToCreature())
-                return;
-
-            std::list<WorldObject*> tmplist;
-            for (auto& target : targets)
+            if (CAST_AI(boss_sapphiron::boss_sapphironAI, caster->ToCreature()->AI())->IsValidExplosionTarget(target))
             {
-                if (CAST_AI(boss_sapphiron::boss_sapphironAI, caster->ToCreature()->AI())->IsValidExplosionTarget(target))
-                {
-                    tmplist.push_back(target);
-                }
-            }
-            targets.clear();
-            for (auto& itr : tmplist)
-            {
-                targets.push_back(itr);
+                tmplist.push_back(target);
             }
         }
-
-        void Register() override
+        targets.clear();
+        for (auto& itr : tmplist)
         {
-            OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_sapphiron_frost_explosion_SpellScript::FilterTargets, EFFECT_0, TARGET_UNIT_DEST_AREA_ENEMY);
+            targets.push_back(itr);
         }
-    };
+    }
 
-    SpellScript* GetSpellScript() const override
+    void Register() override
     {
-        return new spell_sapphiron_frost_explosion_SpellScript();
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_sapphiron_frost_explosion::FilterTargets, EFFECT_0, TARGET_UNIT_DEST_AREA_ENEMY);
     }
 };
 
 void AddSC_boss_sapphiron()
 {
     new boss_sapphiron();
-    new spell_sapphiron_frost_explosion();
+    RegisterSpellScript(spell_sapphiron_frost_explosion);
 }

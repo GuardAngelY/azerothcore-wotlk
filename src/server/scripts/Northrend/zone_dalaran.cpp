@@ -1,35 +1,29 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-/* Script Data Start
-SDName: Dalaran
-SDAuthor: WarHead, MaXiMiUS
-SD%Complete: 99%
-SDComment: For what is 63990+63991? Same function but don't work correct...
-SDCategory: Dalaran
-Script Data End */
-
+#include "AreaDefines.h"
+#include "CreatureScript.h"
+#include "MoveSplineInit.h"
 #include "Player.h"
-#include "ScriptMgr.h"
 #include "ScriptedCreature.h"
 #include "ScriptedGossip.h"
+#include "TaskScheduler.h"
 #include "World.h"
 
-// Ours
 class npc_steam_powered_auctioneer : public CreatureScript
 {
 public:
@@ -154,7 +148,7 @@ public:
 
         void SetData(uint32 type, uint32 /*data*/) override
         {
-            switch(type)
+            switch (type)
             {
                 case ACTION_SHANDY_INTRO:
                     if (Creature* aquanos = me->FindNearestCreature(NPC_AQUANOS_ENTRY, 30, true))
@@ -165,14 +159,14 @@ public:
                     _lSource = 0;
                     _canWash = false;
                     Talk(SAY_SHANDY1);
-                    _events.ScheduleEvent(EVENT_INTRO_DH1, 5000);
-                    _events.ScheduleEvent(EVENT_OUTRO_DH, 10 * MINUTE * IN_MILLISECONDS);
+                    _events.ScheduleEvent(EVENT_INTRO_DH1, 5s);
+                    _events.ScheduleEvent(EVENT_OUTRO_DH, 10min);
                     break;
                 default:
-                    if(_lSource == type && _canWash)
+                    if (_lSource == type && _canWash)
                     {
                         _canWash = false;
-                        _events.ScheduleEvent(EVENT_INTRO_DH2, type == ACTION_UNMENTIONABLES ? 4000 : 10000);
+                        _events.ScheduleEvent(EVENT_INTRO_DH2, type == ACTION_UNMENTIONABLES ? 4s : 10s);
                         Talk(SAY_SHANDY2);
                         if (Creature* aquanos = ObjectAccessor::GetCreature(*me, _aquanosGUID))
                             aquanos->CastSpell(aquanos, SPELL_EVOCATION_VISUAL, false);
@@ -198,31 +192,31 @@ public:
             {
                 case EVENT_INTRO_DH1:
                     Talk(SAY_SHANDY3);
-                    _events.ScheduleEvent(EVENT_INTRO_DH2, 15000);
+                    _events.ScheduleEvent(EVENT_INTRO_DH2, 15s);
                     break;
                 case EVENT_INTRO_DH2:
                     if (_lCount++ > 6)
-                        _events.ScheduleEvent(EVENT_INTRO_DH3, 6000);
+                        _events.ScheduleEvent(EVENT_INTRO_DH3, 6s);
                     else
                         RollTask();
 
                     break;
                 case EVENT_INTRO_DH3:
                     Talk(SAY_SHANDY4);
-                    _events.ScheduleEvent(EVENT_INTRO_DH4, 20000);
+                    _events.ScheduleEvent(EVENT_INTRO_DH4, 20s);
                     break;
                 case EVENT_INTRO_DH4:
                     Talk(SAY_SHANDY5);
-                    _events.ScheduleEvent(EVENT_INTRO_DH5, 3000);
+                    _events.ScheduleEvent(EVENT_INTRO_DH5, 3s);
                     break;
                 case EVENT_INTRO_DH5:
                     me->SummonGameObject(201384, 5798.74f, 693.19f, 657.94f, 0.91f, 0, 0, 0, 0, 90000000);
-                    _events.ScheduleEvent(EVENT_INTRO_DH6, 1000);
+                    _events.ScheduleEvent(EVENT_INTRO_DH6, 1s);
                     break;
                 case EVENT_INTRO_DH6:
                     me->SetWalk(true);
                     me->GetMotionMaster()->MovePoint(0, 5797.55f, 691.97f, 657.94f);
-                    _events.RescheduleEvent(EVENT_OUTRO_DH, 30000);
+                    _events.RescheduleEvent(EVENT_OUTRO_DH, 30s);
                     break;
                 case EVENT_OUTRO_DH:
                     me->GetMotionMaster()->MoveTargetedHome();
@@ -249,7 +243,7 @@ public:
         if (player->GetQuestStatus(QUEST_SUITABLE_DISGUISE_A) == QUEST_STATUS_INCOMPLETE ||
                 player->GetQuestStatus(QUEST_SUITABLE_DISGUISE_H) == QUEST_STATUS_INCOMPLETE)
         {
-            if(player->GetTeamId() == TEAM_ALLIANCE)
+            if (player->GetTeamId() == TEAM_ALLIANCE)
                 AddGossipItemFor(player, GOSSIP_MENU_AQUANOS, GOSSIP_AQUANOS_ALLIANCE, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF);
             else
                 AddGossipItemFor(player, GOSSIP_MENU_AQUANOS, GOSSIP_AQUANOS_HORDE, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF);
@@ -404,7 +398,6 @@ public:
     };
 };
 
-// Theirs
 /*******************************************************
  * npc_mageguard_dalaran
  *******************************************************/
@@ -435,7 +428,7 @@ public:
 
     struct npc_mageguard_dalaranAI : public ScriptedAI
     {
-        npc_mageguard_dalaranAI(Creature* creature) : ScriptedAI(creature)
+        explicit npc_mageguard_dalaranAI(Creature* creature) : ScriptedAI(creature)
         {
             creature->SetUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
             creature->ApplySpellImmune(0, IMMUNITY_DAMAGE, SPELL_SCHOOL_NORMAL, true);
@@ -444,24 +437,26 @@ public:
 
         void Reset() override {}
 
-        void EnterCombat(Unit* /*who*/) override {}
+        void JustEngagedWith(Unit* /*who*/) override {}
 
         void AttackStart(Unit* /*who*/) override {}
 
         void MoveInLineOfSight(Unit* who) override
         {
-            if (!who || !who->IsInWorld() || who->GetZoneId() != 4395)
+            if (!who || !who->IsInWorld()|| who->GetZoneId() != AREA_DALARAN || who->GetAreaId() == AREA_SEWER_EXIT_PIPE)
                 return;
 
             if (!me->IsWithinDist(who, 5.0f, false))
+                return;
+
+            if (who->IsCreature() && who->GetCreatureType() == CREATURE_TYPE_NON_COMBAT_PET)
                 return;
 
             Player* player = who->GetCharmerOrOwnerPlayerOrPlayerItself();
 
             if (!player || player->IsGameMaster() || player->IsBeingTeleported() || (player->GetPositionZ() > 670 && player->GetVehicle()) ||
                     // If player has Disguise aura for quest A Meeting With The Magister or An Audience With The Arcanist, do not teleport it away but let it pass
-                    player->HasAura(SPELL_SUNREAVER_DISGUISE_FEMALE) || player->HasAura(SPELL_SUNREAVER_DISGUISE_MALE) ||
-                    player->HasAura(SPELL_SILVER_COVENANT_DISGUISE_FEMALE) || player->HasAura(SPELL_SILVER_COVENANT_DISGUISE_MALE))
+                    player->HasAnyAuras(SPELL_SUNREAVER_DISGUISE_FEMALE, SPELL_SUNREAVER_DISGUISE_MALE, SPELL_SILVER_COVENANT_DISGUISE_FEMALE, SPELL_SILVER_COVENANT_DISGUISE_MALE))
                 return;
 
             switch (me->GetEntry())
@@ -492,7 +487,6 @@ public:
                     break;
             }
             me->SetOrientation(me->GetHomePosition().GetOrientation());
-            return;
         }
 
         void UpdateAI(uint32 /*diff*/) override {}
@@ -506,115 +500,124 @@ public:
 
 enum MinigobData
 {
-    ZONE_DALARAN            = 4395,
-
     SPELL_MANABONKED        = 61834,
     SPELL_TELEPORT_VISUAL   = 51347,
     SPELL_IMPROVED_BLINK    = 61995,
 
     EVENT_SELECT_TARGET     = 1,
-    EVENT_BLINK             = 2,
-    EVENT_DESPAWN_VISUAL    = 3,
-    EVENT_DESPAWN           = 4,
+    EVENT_POLYMORPH         = 2,
+    EVENT_LAUGH             = 3,
+    EVENT_MOVE              = 4,
+    EVENT_DESPAWN_VISUAL    = 5,
+    EVENT_DESPAWN           = 6,
 
     MAIL_MINIGOB_ENTRY      = 264,
     MAIL_DELIVER_DELAY_MIN  = 5 * MINUTE,
     MAIL_DELIVER_DELAY_MAX  = 15 * MINUTE
 };
 
-class npc_minigob_manabonk : public CreatureScript
+struct npc_minigob_manabonk : public ScriptedAI
 {
-public:
-    npc_minigob_manabonk() : CreatureScript("npc_minigob_manabonk") {}
-
-    struct npc_minigob_manabonkAI : public ScriptedAI
+    npc_minigob_manabonk(Creature* creature) : ScriptedAI(creature)
     {
-        npc_minigob_manabonkAI(Creature* creature) : ScriptedAI(creature)
-        {
-            me->setActive(true);
-        }
+        me->setActive(true);
+    }
 
-        void Reset() override
-        {
-            me->SetVisible(false);
-            events.ScheduleEvent(EVENT_SELECT_TARGET, IN_MILLISECONDS);
-        }
+    void Reset() override
+    {
+        me->SetVisible(false);
+        playerGUID.Clear();
+        events.ScheduleEvent(EVENT_SELECT_TARGET, 1s);
+    }
 
-        Player* SelectTargetInDalaran()
-        {
-            std::list<Player*> PlayerInDalaranList;
-            PlayerInDalaranList.clear();
+    Player* SelectTargetInDalaran()
+    {
+        std::list<Player*> playerInDalaranList;
+        playerInDalaranList.clear();
 
-            Map::PlayerList const& players = me->GetMap()->GetPlayers();
-            for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
-                if (Player* player = itr->GetSource()->ToPlayer())
-                    if (player->GetZoneId() == ZONE_DALARAN && !player->IsFlying() && !player->IsMounted() && !player->IsGameMaster())
-                        PlayerInDalaranList.push_back(player);
-
-            if (PlayerInDalaranList.empty())
-                return nullptr;
-            return Acore::Containers::SelectRandomContainerElement(PlayerInDalaranList);
-        }
-
-        void SendMailToPlayer(Player* player)
-        {
-            CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
-            int16 deliverDelay = irand(MAIL_DELIVER_DELAY_MIN, MAIL_DELIVER_DELAY_MAX);
-            MailDraft(MAIL_MINIGOB_ENTRY, true).SendMailTo(trans, MailReceiver(player), MailSender(MAIL_CREATURE, me->GetEntry()), MAIL_CHECK_MASK_NONE, deliverDelay);
-            CharacterDatabase.CommitTransaction(trans);
-        }
-
-        void UpdateAI(uint32 diff) override
-        {
-            if (!sWorld->getBoolConfig(CONFIG_MINIGOB_MANABONK))
-                return;
-
-            events.Update(diff);
-
-            while (uint32 eventId = events.ExecuteEvent())
+        me->GetMap()->DoForAllPlayers([&](Player* player)
             {
-                switch (eventId)
-                {
-                    case EVENT_SELECT_TARGET:
-                        me->SetVisible(true);
-                        DoCast(me, SPELL_TELEPORT_VISUAL);
-                        if (Player* player = SelectTargetInDalaran())
+                if (player->GetZoneId() == AREA_DALARAN && !player->IsFlying() && !player->IsMounted() && !player->IsGameMaster())
+                    playerInDalaranList.push_back(player);
+            });
+
+        if (playerInDalaranList.empty())
+            return nullptr;
+        return Acore::Containers::SelectRandomContainerElement(playerInDalaranList);
+    }
+
+    void SendMailToPlayer(Player* player)
+    {
+        CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
+        int16 deliverDelay = irand(MAIL_DELIVER_DELAY_MIN, MAIL_DELIVER_DELAY_MAX);
+        MailDraft(MAIL_MINIGOB_ENTRY, true).SendMailTo(trans, MailReceiver(player), MailSender(MAIL_CREATURE, me->GetEntry()), MAIL_CHECK_MASK_NONE, deliverDelay);
+        CharacterDatabase.CommitTransaction(trans);
+    }
+
+    void UpdateAI(uint32 diff) override
+    {
+        if (!sWorld->getBoolConfig(CONFIG_MINIGOB_MANABONK))
+            return;
+
+        events.Update(diff);
+
+        while (uint32 eventId = events.ExecuteEvent())
+        {
+            switch (eventId)
+            {
+                case EVENT_SELECT_TARGET:
+                    me->SetVisible(true);
+                    DoCastSelf(SPELL_TELEPORT_VISUAL);
+                    if (Player* player = SelectTargetInDalaran())
+                    {
+                        playerGUID = player->GetGUID();
+                        Position pos = player->GetPosition();
+                        me->NearTeleportTo(pos.GetPositionX(), pos.GetPositionY(), pos.GetPositionZ(), pos.GetOrientation());
+                        me->GetMotionMaster()->MoveRandom(10);
+                    }
+                    events.ScheduleEvent(EVENT_POLYMORPH, 30s);
+                    break;
+                case EVENT_POLYMORPH:
+                    if (Player* player = ObjectAccessor::GetPlayer(*me, playerGUID))
+                    {
+                        if (player->IsGameMaster())
                         {
-                            me->NearTeleportTo(player->GetPositionX(), player->GetPositionY(), player->GetPositionZ(), 0.0f);
-                            DoCast(player, SPELL_MANABONKED);
-                            SendMailToPlayer(player);
+                            me->DespawnOrUnsummon();
+                            return;
                         }
-                        events.ScheduleEvent(EVENT_BLINK, 3 * IN_MILLISECONDS);
-                        break;
-                    case EVENT_BLINK:
-                        {
-                            DoCast(me, SPELL_IMPROVED_BLINK);
-                            Position pos = me->GetRandomNearPosition((urand(15, 40)));
-                            me->GetMotionMaster()->MovePoint(0, pos.m_positionX, pos.m_positionY, pos.m_positionZ);
-                            events.ScheduleEvent(EVENT_DESPAWN, 3 * IN_MILLISECONDS);
-                            events.ScheduleEvent(EVENT_DESPAWN_VISUAL, 2.5 * IN_MILLISECONDS);
-                            break;
-                        }
-                    case EVENT_DESPAWN_VISUAL:
-                        DoCast(me, SPELL_TELEPORT_VISUAL);
-                        break;
-                    case EVENT_DESPAWN:
+                        DoCast(player, SPELL_MANABONKED);
+                        SendMailToPlayer(player);
+                    }
+                    else
                         me->DespawnOrUnsummon();
-                        break;
-                    default:
-                        break;
-                }
+                    events.ScheduleEvent(EVENT_LAUGH, 2s);
+                    break;
+                case EVENT_LAUGH:
+                    me->GetMotionMaster()->MoveIdle();
+                    me->HandleEmoteCommand(EMOTE_ONESHOT_LAUGH_NO_SHEATHE);
+                    events.ScheduleEvent(EVENT_MOVE, 4s);
+                    break;
+                case EVENT_MOVE:
+                    {
+                        Position pos = me->GetRandomNearPosition((urand(15, 40)));
+                        me->GetMotionMaster()->MovePoint(0, pos.GetPositionX(), pos.GetPositionY(), pos.GetPositionZ());
+                    }
+                    events.ScheduleEvent(EVENT_DESPAWN_VISUAL, 3s);
+                    events.ScheduleEvent(EVENT_DESPAWN, 4s);
+                    break;
+                case EVENT_DESPAWN_VISUAL:
+                    DoCastSelf(SPELL_IMPROVED_BLINK);
+                    break;
+                case EVENT_DESPAWN:
+                    me->DespawnOrUnsummon();
+                    break;
+                default:
+                    break;
             }
         }
-
-    private:
-        EventMap events;
-    };
-
-    CreatureAI* GetAI(Creature* creature) const override
-    {
-        return new npc_minigob_manabonkAI(creature);
     }
+private:
+    ObjectGuid playerGUID;
 };
 
 class npc_dalaran_mage : public CreatureScript
@@ -656,7 +659,7 @@ public:
             me->AddAura(1908, me);
         }
 
-        void EnterCombat(Unit* /*who*/) override
+        void JustEngagedWith(Unit* /*who*/) override
         {
         }
 
@@ -756,7 +759,7 @@ public:
             Initialize();
         }
 
-        void EnterCombat(Unit* /*who*/) override
+        void JustEngagedWith(Unit* /*who*/) override
         {
             me->AddAura(1908, me);
             Battleshout_timer = 1000;
@@ -803,6 +806,61 @@ public:
     };
 };
 
+enum ToyPlane
+{
+    NPC_DND_DALARAN_TOY_STORE_PLANE_STRING_HOOK = 29807,
+
+    SPELL_TOY_PLANE_CABLE   = 55281,
+};
+
+struct npc_cosmetic_toy_plane : public ScriptedAI
+{
+    npc_cosmetic_toy_plane(Creature* creature) : ScriptedAI(creature)
+    {
+    }
+
+    void Reset() override
+    {
+        Movement::MoveSplineInit init(me);
+        init.MovebyPath(_movementArray);
+        init.SetFly();
+        init.SetCyclic();
+        // one full loop is 10.76 seconds (sniffed value)
+        // loop diameter is approx. 9.225f (calculated from waypoints below)
+        // with a circumference of approx. 28.98f
+        // this results in flying speed of approx. 2.7f
+        init.SetVelocity(2.7f);
+        init.Launch();
+
+        scheduler.Schedule(420ms, [this](TaskContext context)
+            {
+                if (Creature* cr = me->FindNearestCreature(NPC_DND_DALARAN_TOY_STORE_PLANE_STRING_HOOK, 42.0f))
+                    DoCast(cr, SPELL_TOY_PLANE_CABLE, true);
+                else
+                    context.Repeat();
+            });
+    }
+
+    void UpdateAI(uint32 diff) override
+    {
+        scheduler.Update(diff);
+    }
+
+private:
+    Movement::PointsArray const _movementArray = {
+        // cyclic movementspine unfortunately includes spawn into loop
+        // which results in an imperfect loop right now
+        // CO1 SPAWN(5809.888,  683.5779,  653.6859)
+        G3D::Vector3(5813.709,  682.51855, 653.6033),
+        G3D::Vector3(5816.815,  684.8459,  653.5755),
+        G3D::Vector3(5817.1997, 688.83527, 653.631),
+        G3D::Vector3(5814.235,  691.6307,  653.6587),
+        G3D::Vector3(5809.9287, 690.98224, 653.7697),
+        G3D::Vector3(5808.225,  687.1498,  653.6322),
+        G3D::Vector3(5809.8423, 683.6158,  653.6862),
+    };
+};
+
 void AddSC_dalaran()
 {
     // our
@@ -812,8 +870,7 @@ void AddSC_dalaran()
     new npc_archmage_landalock();
     new npc_dalaran_mage();
     new npc_dalaran_warrior();
-
-    // theirs
+    RegisterCreatureAI(npc_cosmetic_toy_plane);
     new npc_mageguard_dalaran();
-    new npc_minigob_manabonk();
+    RegisterCreatureAI(npc_minigob_manabonk);
 }

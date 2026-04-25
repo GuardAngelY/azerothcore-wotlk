@@ -1,3 +1,17 @@
+#!/usr/bin/env bash
+
+# shellcheck source=../../../deps/acore/bash-lib/src/common/boolean.sh
+source "$AC_BASH_LIB_PATH/common/boolean.sh"
+
+# Set SUDO variable - one liner
+SUDO=""
+
+IS_SUDO_ENABLED=${AC_ENABLE_ROOT_CMAKE_INSTALL:-0}
+
+# Allow callers to opt-out from privilege escalation during install/perms adjustments
+if [[ $IS_SUDO_ENABLED == 1 ]]; then
+  SUDO=$([ "$EUID" -ne 0 ] && echo "sudo" || echo "")
+fi
 
 function comp_clean() {
   DIRTOCLEAN=${BUILDPATH:-var/build/obj}
@@ -73,7 +87,7 @@ function comp_configure() {
     echo "Platform: $OSTYPE"
     case "$OSTYPE" in
       darwin*)
-        OSOPTIONS=" -DMYSQL_ADD_INCLUDE_PATH=/usr/local/include -DMYSQL_LIBRARY=/usr/local/lib/libmysqlclient.dylib -DREADLINE_INCLUDE_DIR=/usr/local/opt/readline/include -DREADLINE_LIBRARY=/usr/local/opt/readline/lib/libreadline.dylib -DOPENSSL_INCLUDE_DIR=/usr/local/opt/openssl@1.1/include -DOPENSSL_SSL_LIBRARIES=/usr/local/opt/openssl@1.1/lib/libssl.dylib -DOPENSSL_CRYPTO_LIBRARIES=/usr/local/opt/openssl@1.1/lib/libcrypto.dylib "
+        OSOPTIONS=" -DMYSQL_ADD_INCLUDE_PATH=/usr/local/include -DMYSQL_LIBRARY=/usr/local/lib/libmysqlclient.dylib -DREADLINE_INCLUDE_DIR=/usr/local/opt/readline/include -DREADLINE_LIBRARY=/usr/local/opt/readline/lib/libreadline.dylib -DOPENSSL_INCLUDE_DIR=/usr/local/opt/openssl@3/include -DOPENSSL_SSL_LIBRARIES=/usr/local/opt/openssl@3/lib/libssl.dylib -DOPENSSL_CRYPTO_LIBRARIES=/usr/local/opt/openssl@3/lib/libcrypto.dylib "
         ;;
       msys*)
         OSOPTIONS=" -DMYSQL_INCLUDE_DIR=C:\tools\mysql\current\include -DMYSQL_LIBRARY=C:\tools\mysql\current\lib\mysqlclient.lib "
@@ -104,9 +118,7 @@ function comp_compile() {
 
   echo "Using $MTHREADS threads"
 
-  CWD=$(pwd)
-
-  cd $BUILDPATH
+  pushd "$BUILDPATH" >> /dev/null || exit 1
 
   comp_ccacheEnable
 
@@ -121,12 +133,13 @@ function comp_compile() {
     msys*)
       cmake --install . --config $CTYPE
 
-      cd $CWD
+      popd >> /dev/null || exit 1
 
       echo "Done"
       ;;
     linux*|darwin*)
-      local confDir=${CONFDIR:-"$AC_BINPATH_FULL/../etc"}
+      local confDir
+      confDir=${CONFDIR:-"$AC_BINPATH_FULL/../etc"}
 
       # create the folders before installing to
       # set the current user and permissions
@@ -134,28 +147,48 @@ function comp_compile() {
       mkdir -p "$AC_BINPATH_FULL"
       echo "Creating $confDir..."
       mkdir -p "$confDir"
+      mkdir -p "$confDir/modules"
+
+      confDir=$(realpath "$confDir")
 
       echo "Cmake install..."
-      sudo cmake --install . --config $CTYPE
+      $SUDO cmake --install . --config $CTYPE
 
-      cd $CWD
+      popd >> /dev/null || exit 1
 
       # set all aplications SUID bit
-      echo "Setting permissions on binary files"
-      find "$AC_BINPATH_FULL"  -mindepth 1 -maxdepth 1 -type f -exec sudo chown root:root -- {} +
-      find "$AC_BINPATH_FULL"  -mindepth 1 -maxdepth 1 -type f -exec sudo chmod u+s  -- {} +
+      if [[ $IS_SUDO_ENABLED == 0 ]]; then
+        echo "Skipping root ownership and SUID changes (IS_SUDO_ENABLED=0)"
+      else
+        echo "Setting permissions on binary files"
+        find "$AC_BINPATH_FULL"  -mindepth 1 -maxdepth 1 -type f -exec $SUDO chown root:root -- {} +
+        find "$AC_BINPATH_FULL"  -mindepth 1 -maxdepth 1 -type f -exec $SUDO chmod u+s  -- {} +
+        $SUDO setcap cap_sys_nice=eip "$AC_BINPATH_FULL/worldserver"
+        $SUDO setcap cap_sys_nice=eip "$AC_BINPATH_FULL/authserver"
+      fi
 
-      DOCKER_ETC_FOLDER=${DOCKER_ETC_FOLDER:-"env/dist/etc"}
 
-      if [[ $DOCKER = 1 && $DISABLE_DOCKER_CONF != 1 ]]; then
-        echo "Generating confs..."
-        cp -n "$DOCKER_ETC_FOLDER/worldserver.conf.dockerdist" "${confDir}/worldserver.conf"
-        cp -n "$DOCKER_ETC_FOLDER/authserver.conf.dockerdist" "${confDir}/authserver.conf"
-        cp -n "$DOCKER_ETC_FOLDER/dbimport.conf.dockerdist" "${confDir}/dbimport.conf"
+      if ( isTrue "$AC_ENABLE_CONF_COPY_ON_INSTALL" ) then
+        echo "Copying default configuration files to $confDir ..."
+        [[ -f "$confDir/worldserver.conf.dist" && ! -f "$confDir/worldserver.conf" ]] && \
+            cp -v "$confDir/worldserver.conf.dist" "$confDir/worldserver.conf"
+        [[ -f "$confDir/authserver.conf.dist" && ! -f "$confDir/authserver.conf"  ]] && \
+            cp -v "$confDir/authserver.conf.dist" "$confDir/authserver.conf"
+        [[ -f "$confDir/dbimport.conf.dist" && ! -f "$confDir/dbimport.conf" ]] && \
+            cp -v "$confDir/dbimport.conf.dist" "$confDir/dbimport.conf"
+
+        for f in "$confDir/modules/"*.dist
+        do
+            [[ -e $f ]] || break  # handle the case of no *.dist files
+            if [[ ! -f "${f%.dist}" ]]; then
+                echo "Copying module config $(basename "${f%.dist}")"
+                cp -v "$f" "${f%.dist}";
+            fi
+        done
       fi
 
       echo "Done"
-    ;;
+      ;;
   esac
 
   runHooks "ON_AFTER_BUILD"

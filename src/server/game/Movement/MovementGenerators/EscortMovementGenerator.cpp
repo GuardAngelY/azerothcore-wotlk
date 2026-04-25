@@ -1,14 +1,14 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
@@ -18,12 +18,8 @@
 #include "EscortMovementGenerator.h"
 #include "Creature.h"
 #include "CreatureAI.h"
-#include "Errors.h"
-#include "MoveSpline.h"
 #include "MoveSplineInit.h"
 #include "Player.h"
-#include "Unit.h"
-#include "World.h"
 
 template<class T>
 void EscortMovementGenerator<T>::DoInitialize(T* unit)
@@ -32,13 +28,18 @@ void EscortMovementGenerator<T>::DoInitialize(T* unit)
         unit->StopMoving();
 
     unit->AddUnitState(UNIT_STATE_ROAMING | UNIT_STATE_ROAMING_MOVE);
-    _recalculateSpeed = false;
+    i_recalculateSpeed = false;
     Movement::MoveSplineInit init(unit);
 
-    if (_precomputedPath.size() == 2) // xinef: simple case, just call move to
-        init.MoveTo(_precomputedPath[1].x, _precomputedPath[1].y, _precomputedPath[1].z, true);
-    else if (_precomputedPath.size())
-        init.MovebyPath(_precomputedPath);
+    if (m_precomputedPath.size() == 2) // xinef: simple case, just call move to
+        init.MoveTo(m_precomputedPath[1].x, m_precomputedPath[1].y, m_precomputedPath[1].z, true);
+    else if (m_precomputedPath.size())
+        init.MovebyPath(m_precomputedPath);
+
+    if (_forcedMovement == FORCED_MOVEMENT_WALK)
+        init.SetWalk(true);
+    else if (_forcedMovement == FORCED_MOVEMENT_RUN)
+        init.SetWalk(false);
 
     init.Launch();
 
@@ -61,27 +62,32 @@ bool EscortMovementGenerator<T>::DoUpdate(T* unit, uint32  /*diff*/)
 
     bool arrived = unit->movespline->Finalized();
 
-    if (_recalculateSpeed && !arrived)
+    if (i_recalculateSpeed && !arrived)
     {
-        _recalculateSpeed = false;
+        i_recalculateSpeed = false;
         Movement::MoveSplineInit init(unit);
 
         // xinef: speed changed during path execution, calculate remaining path and launch it once more
-        if (_precomputedPath.size())
+        if (m_precomputedPath.size())
         {
-            uint32 offset = std::min(uint32(unit->movespline->_currentSplineIdx()), uint32(_precomputedPath.size()));
-            Movement::PointsArray::iterator offsetItr = _precomputedPath.begin();
+            uint32 offset = std::min(uint32(unit->movespline->_currentSplineIdx()), uint32(m_precomputedPath.size()));
+            Movement::PointsArray::iterator offsetItr = m_precomputedPath.begin();
             std::advance(offsetItr, offset);
-            _precomputedPath.erase(_precomputedPath.begin(), offsetItr);
+            m_precomputedPath.erase(m_precomputedPath.begin(), offsetItr);
 
             // restore 0 element (current position)
-            _precomputedPath.insert(_precomputedPath.begin(), G3D::Vector3(unit->GetPositionX(), unit->GetPositionY(), unit->GetPositionZ()));
+            m_precomputedPath.insert(m_precomputedPath.begin(), G3D::Vector3(unit->GetPositionX(), unit->GetPositionY(), unit->GetPositionZ()));
 
-            if (_precomputedPath.size() > 2)
-                init.MovebyPath(_precomputedPath);
-            else if (_precomputedPath.size() == 2)
-                init.MoveTo(_precomputedPath[1].x, _precomputedPath[1].y, _precomputedPath[1].z, true);
+            if (m_precomputedPath.size() > 2)
+                init.MovebyPath(m_precomputedPath);
+            else if (m_precomputedPath.size() == 2)
+                init.MoveTo(m_precomputedPath[1].x, m_precomputedPath[1].y, m_precomputedPath[1].z, true);
         }
+
+        if (_forcedMovement == FORCED_MOVEMENT_WALK)
+            init.SetWalk(true);
+        else if (_forcedMovement == FORCED_MOVEMENT_RUN)
+            init.SetWalk(false);
 
         init.Launch();
         // Xinef: Override spline Id on recalculate launch

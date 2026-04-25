@@ -1,28 +1,28 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "InstanceMapScript.h"
 #include "InstanceScript.h"
-#include "ScriptMgr.h"
 #include "hellfire_ramparts.h"
 
 class instance_hellfire_ramparts : public InstanceMapScript
 {
 public:
-    instance_hellfire_ramparts() : InstanceMapScript("instance_hellfire_ramparts", 543) { }
+    instance_hellfire_ramparts() : InstanceMapScript("instance_hellfire_ramparts", MAP_HELLFIRE_CITADEL_RAMPARTS) { }
 
     struct instance_hellfire_ramparts_InstanceMapScript : public InstanceScript
     {
@@ -30,6 +30,7 @@ public:
 
         void Initialize() override
         {
+            SetHeaders(DataHeader);
             SetBossNumber(MAX_ENCOUNTERS);
         }
 
@@ -53,36 +54,6 @@ public:
                 if (GameObject* chest = instance->GetGameObject(felIronChestGUID))
                     chest->RemoveGameObjectFlag(GO_FLAG_NOT_SELECTABLE);
             return true;
-        }
-
-        std::string GetSaveData() override
-        {
-            std::ostringstream saveStream;
-            saveStream << "H R " << GetBossSaveData();
-            return saveStream.str();
-        }
-
-        void Load(const char* strIn) override
-        {
-            if (!strIn)
-                return;
-
-            char dataHead1, dataHead2;
-            std::istringstream loadStream(strIn);
-            loadStream >> dataHead1 >> dataHead2;
-
-            if (dataHead1 == 'H' && dataHead2 == 'R')
-            {
-                for (uint8 i = 0; i < MAX_ENCOUNTERS; ++i)
-                {
-                    uint32 tmpState;
-                    loadStream >> tmpState;
-                    if (tmpState == IN_PROGRESS || tmpState > SPECIAL)
-                        tmpState = NOT_STARTED;
-
-                    SetBossState(i, EncounterState(tmpState));
-                }
-            }
         }
 
     protected:

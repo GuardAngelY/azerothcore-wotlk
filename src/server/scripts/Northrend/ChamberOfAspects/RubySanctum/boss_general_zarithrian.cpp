@@ -1,21 +1,21 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "ScriptMgr.h"
+#include "CreatureScript.h"
 #include "ScriptedCreature.h"
 #include "ScriptedEscortAI.h"
 #include "ruby_sanctum.h"
@@ -111,16 +111,16 @@ public:
             }
         }
 
-        void EnterCombat(Unit* who) override
+        void JustEngagedWith(Unit* who) override
         {
-            BossAI::EnterCombat(who);
+            BossAI::JustEngagedWith(who);
             Talk(SAY_AGGRO);
 
-            events.ScheduleEvent(EVENT_CLEAVE, 9000);
-            events.ScheduleEvent(EVENT_INTIDMDATING_ROAR, 14000);
-            events.ScheduleEvent(EVENT_SUMMON_ADDS1, 18000);
+            events.ScheduleEvent(EVENT_CLEAVE, 9s);
+            events.ScheduleEvent(EVENT_INTIDMDATING_ROAR, 14s);
+            events.ScheduleEvent(EVENT_SUMMON_ADDS1, 18s);
             if (Is25ManRaid())
-                events.ScheduleEvent(EVENT_SUMMON_ADDS2, 20000);
+                events.ScheduleEvent(EVENT_SUMMON_ADDS2, 20s);
         }
 
         void JustSummoned(Creature* summon) override
@@ -136,10 +136,10 @@ public:
 
         void KilledUnit(Unit*  /*victim*/) override
         {
-            if (events.GetNextEventTime(EVENT_KILL_TALK) == 0)
+            if (!events.HasTimeUntilEvent(EVENT_KILL_TALK))
             {
                 Talk(SAY_KILL);
-                events.ScheduleEvent(EVENT_KILL_TALK, 6000);
+                events.ScheduleEvent(EVENT_KILL_TALK, 6s);
             }
         }
 
@@ -160,22 +160,22 @@ public:
                         stalker1->CastSpell(stalker1, SPELL_SUMMON_FLAMECALLER, false);
                     if (Creature* stalker2 = ObjectAccessor::GetCreature(*me, instance->GetGuidData(DATA_ZARITHRIAN_SPAWN_STALKER_2)))
                         stalker2->CastSpell(stalker2, SPELL_SUMMON_FLAMECALLER, false);
-                    events.ScheduleEvent(EVENT_SUMMON_ADDS1, 40000);
+                    events.ScheduleEvent(EVENT_SUMMON_ADDS1, 40s);
                     break;
                 case EVENT_SUMMON_ADDS2:
                     if (Creature* stalker1 = ObjectAccessor::GetCreature(*me, instance->GetGuidData(DATA_ZARITHRIAN_SPAWN_STALKER_1)))
                         stalker1->CastSpell(stalker1, SPELL_SUMMON_FLAMECALLER, false);
                     if (Creature* stalker2 = ObjectAccessor::GetCreature(*me, instance->GetGuidData(DATA_ZARITHRIAN_SPAWN_STALKER_2)))
                         stalker2->CastSpell(stalker2, SPELL_SUMMON_FLAMECALLER, false);
-                    events.ScheduleEvent(EVENT_SUMMON_ADDS2, 40000);
+                    events.ScheduleEvent(EVENT_SUMMON_ADDS2, 40s);
                     break;
                 case EVENT_INTIDMDATING_ROAR:
                     me->CastSpell(me, SPELL_INTIMIDATING_ROAR, false);
-                    events.ScheduleEvent(EVENT_INTIDMDATING_ROAR, 30000);
+                    events.ScheduleEvent(EVENT_INTIDMDATING_ROAR, 30s);
                     break;
                 case EVENT_CLEAVE:
                     me->CastSpell(me->GetVictim(), SPELL_CLEAVE_ARMOR, false);
-                    events.ScheduleEvent(EVENT_CLEAVE, 15000);
+                    events.ScheduleEvent(EVENT_CLEAVE, 15s);
                     break;
             }
 
@@ -210,14 +210,15 @@ public:
         {
             _lavaGoutCount = 0;
             AddWaypoints();
-            Start(true, true);
+            me->SetWalk(false);
+            Start(true);
         }
 
-        void EnterCombat(Unit* /*who*/) override
+        void JustEngagedWith(Unit* /*who*/) override
         {
             _events.Reset();
-            _events.ScheduleEvent(EVENT_BLAST_NOVA, urand(20000, 30000));
-            _events.ScheduleEvent(EVENT_LAVA_GOUT, 5000);
+            _events.ScheduleEvent(EVENT_BLAST_NOVA, 20s, 30s);
+            _events.ScheduleEvent(EVENT_LAVA_GOUT, 5s);
         }
 
         void EnterEvadeMode(EvadeReason /*why*/) override
@@ -225,13 +226,14 @@ public:
             // Prevent EvadeMode
         }
 
-        void IsSummonedBy(Unit* /*summoner*/) override
+        void IsSummonedBy(WorldObject* /*summoner*/) override
         {
             // Let Zarithrian count as summoner. _instance cant be null since we got GetRubySanctumAI
             if (Creature* zarithrian = ObjectAccessor::GetCreature(*me, _instance->GetGuidData(NPC_GENERAL_ZARITHRIAN)))
                 zarithrian->AI()->JustSummoned(me);
         }
 
+        using CreatureAI::WaypointReached;
         void WaypointReached(uint32 waypointId) override
         {
             if (waypointId == MAX_PATH_FLAMECALLER_WAYPOINTS)
@@ -265,18 +267,18 @@ public:
             {
                 case EVENT_BLAST_NOVA:
                     DoCastAOE(SPELL_BLAST_NOVA);
-                    _events.ScheduleEvent(EVENT_BLAST_NOVA, urand(20000, 30000));
+                    _events.ScheduleEvent(EVENT_BLAST_NOVA, 20s, 30s);
                     break;
                 case EVENT_LAVA_GOUT:
                     if (_lavaGoutCount >= 3)
                     {
                         _lavaGoutCount = 0;
-                        _events.ScheduleEvent(EVENT_LAVA_GOUT, 8000);
+                        _events.ScheduleEvent(EVENT_LAVA_GOUT, 8s);
                         break;
                     }
                     DoCastVictim(SPELL_LAVA_GOUT);
                     _lavaGoutCount++;
-                    _events.ScheduleEvent(EVENT_LAVA_GOUT, 1500);
+                    _events.ScheduleEvent(EVENT_LAVA_GOUT, 1500ms);
                     break;
             }
 

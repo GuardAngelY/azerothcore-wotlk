@@ -1,14 +1,14 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
@@ -35,15 +35,15 @@ template<class T, class P>
 class PathMovementBase
 {
 public:
-    PathMovementBase() : i_path(), _currentNode(0) {}
-    PathMovementBase(P path) : i_path(path), _currentNode(0) {}
+    PathMovementBase() : i_path(), i_currentNode(0) {}
+    PathMovementBase(P path) : i_path(path), i_currentNode(0) {}
     virtual ~PathMovementBase() {};
 
-    uint32 GetCurrentNode() const { return _currentNode; }
+    uint32 GetCurrentNode() const { return i_currentNode; }
 
 protected:
     P i_path;
-    uint32 _currentNode;
+    uint32 i_currentNode;
 };
 
 template<class T>
@@ -54,45 +54,43 @@ class WaypointMovementGenerator<Creature> : public MovementGeneratorMedium< Crea
     public PathMovementBase<Creature, WaypointPath const*>
 {
 public:
-    WaypointMovementGenerator(uint32 _path_id = 0, bool _repeating = true)
-        : PathMovementBase((WaypointPath const*)nullptr), i_nextMoveTime(0), m_isArrivalDone(false), path_id(_path_id), repeating(_repeating)  {}
+    explicit WaypointMovementGenerator(uint32 pathId = 0, bool repeating = true, PathSource pathSource = PathSource::WAYPOINT_MGR);
+    explicit WaypointMovementGenerator(WaypointPath& path, bool repeating = true);
     ~WaypointMovementGenerator() { i_path = nullptr; }
+
     void DoInitialize(Creature*);
     void DoFinalize(Creature*);
     void DoReset(Creature*);
     bool DoUpdate(Creature*, uint32 diff);
 
-    void MovementInform(Creature*);
+    void unitSpeedChanged() override { _recalculateSpeed = true; }
+    void Pause(uint32 timer = 0) override;
+    void Resume(uint32 overrideTimer = 0) override;
+    bool GetResetPosition(float& x, float& y, float& z) override;
 
-    MovementGeneratorType GetMovementGeneratorType() { return WAYPOINT_MOTION_TYPE; }
-
-    // now path movement implmementation
-    void LoadPath(Creature*);
+    MovementGeneratorType GetMovementGeneratorType() override { return WAYPOINT_MOTION_TYPE; }
 
 private:
-    void Stop(int32 time) { i_nextMoveTime.Reset(time);}
+    void ProcessWaypointArrival(Creature*, WaypointNode const&);
+    void StartMove(Creature*, bool relaunch = false);
+    bool IsAllowedToMove(Creature*) const;
+    void UpdateWaypointState(Creature*, WaypointNode const&);
 
-    bool Stopped() { return !i_nextMoveTime.Passed();}
+    uint32 _lastSplineId;
+    uint32 _pathId;
+    int32 _waypointDelay;
+    std::optional<int32> _pauseTime;
+    bool _waypointReached;
 
-    bool CanMove(int32 diff)
-    {
-        i_nextMoveTime.Update(diff);
-        return i_nextMoveTime.Passed();
-    }
-
-    void OnArrived(Creature*);
-    bool StartMove(Creature*);
-
-    void StartMoveNow(Creature* creature)
-    {
-        i_nextMoveTime.Reset(0);
-        StartMove(creature);
-    }
-
-    TimeTrackerSmall i_nextMoveTime;
-    bool m_isArrivalDone;
-    uint32 path_id;
-    bool repeating;
+    bool _recalculateSpeed;
+    bool _repeating;
+    bool _loadedFromDB;
+    bool _stalled;
+    bool _hasBeenStalled;
+    bool _done;
+    PathSource _pathSource;
+    bool _smoothSplineLaunched;
+    int32 _lastPassedSplineIdx;
 };
 
 /** FlightPathMovementGenerator generates movement of the player for the paths
@@ -104,7 +102,7 @@ class FlightPathMovementGenerator : public MovementGeneratorMedium< Player, Flig
     public:
         explicit FlightPathMovementGenerator(uint32 startNode = 0)
         {
-            _currentNode = startNode;
+            i_currentNode = startNode;
             _endGridX = 0.0f;
             _endGridY = 0.0f;
             _endMapId = 0;
@@ -119,9 +117,9 @@ class FlightPathMovementGenerator : public MovementGeneratorMedium< Player, Flig
 
         TaxiPathNodeList const& GetPath() { return i_path; }
         uint32 GetPathAtMapEnd() const;
-        bool HasArrived() const { return (_currentNode >= i_path.size()); }
+        bool HasArrived() const { return (i_currentNode >= i_path.size()); }
         void SetCurrentNodeAfterTeleport();
-        void SkipCurrentNode() { ++_currentNode; }
+        void SkipCurrentNode() { ++i_currentNode; }
         void DoEventIfAny(Player* player, TaxiPathNodeEntry const* node, bool departure);
 
         bool GetResetPos(Player*, float& x, float& y, float& z);

@@ -1,14 +1,14 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
@@ -20,7 +20,6 @@
 #include "Config.h"
 #include "GameTime.h"
 #include "GridNotifiers.h"
-#include "GridNotifiersImpl.h"
 #include "Group.h"
 #include "InstanceScript.h"
 #include "Log.h"
@@ -33,6 +32,7 @@
 #include "Timer.h"
 #include "Transport.h"
 #include "World.h"
+#include "WorldSessionMgr.h"
 
 uint16 InstanceSaveMgr::ResetTimeDelay[] = {3600, 900, 300, 60, 0};
 PlayerBindStorage InstanceSaveMgr::playerBindStorage;
@@ -82,7 +82,7 @@ InstanceSave* InstanceSaveMgr::AddInstanceSave(uint32 mapId, uint32 instanceId, 
 
     if (difficulty >= (entry->IsRaid() ? MAX_RAID_DIFFICULTY : MAX_DUNGEON_DIFFICULTY))
     {
-        LOG_ERROR("instance.save", "InstanceSaveMgr::AddInstanceSave: mapid = {}, instanceid = {}, wrong dificalty {}!", mapId, instanceId, difficulty);
+        LOG_ERROR("instance.save", "InstanceSaveMgr::AddInstanceSave: mapid = {}, instanceid = {}, wrong difficulty {}!", mapId, instanceId, difficulty);
         return nullptr;
     }
 
@@ -136,6 +136,8 @@ bool InstanceSaveMgr::DeleteInstanceSaveIfNeeded(InstanceSave* save, bool skipMa
 
         // clear respawn times (if map is loaded do it just to be sure, if already unloaded it won't do it by itself)
         Map::DeleteRespawnTimesInDB(save->GetMapId(), save->GetInstanceId());
+
+        sScriptMgr->OnInstanceIdRemoved(save->GetInstanceId());
 
         if (deleteSave)
         {
@@ -493,7 +495,9 @@ void InstanceSaveMgr::Update()
     {
         LOG_INFO("instance.save", "Instance ID reset occurred, sending updated calendar and raid info to all players!");
         WorldPacket dummy;
-        for (SessionMap::const_iterator itr = sWorld->GetAllSessions().begin(); itr != sWorld->GetAllSessions().end(); ++itr)
+
+        WorldSessionMgr::SessionMap const& sessionMap = sWorldSessionMgr->GetAllSessions();
+        for (WorldSessionMgr::SessionMap::const_iterator itr = sessionMap.begin(); itr != sessionMap.end(); ++itr)
             if (Player* plr = itr->second->GetPlayer())
             {
                 itr->second->HandleCalendarGetCalendar(dummy);
@@ -528,6 +532,8 @@ void InstanceSaveMgr::_ResetSave(InstanceSaveHashMap::iterator& itr)
         // clear respawn times if the map is already unloaded and won't do it by itself
         if (!sMapMgr->FindMap(itr->second->GetMapId(), itr->second->GetInstanceId()))
             Map::DeleteRespawnTimesInDB(itr->second->GetMapId(), itr->second->GetInstanceId());
+
+        sScriptMgr->OnInstanceIdRemoved(itr->second->GetInstanceId());
 
         delete itr->second;
         m_instanceSaveById.erase(itr);
@@ -672,6 +678,9 @@ InstancePlayerBind* InstanceSaveMgr::PlayerBindToInstance(ObjectGuid guid, Insta
         stmt->SetData(1, save->GetInstanceId());
         stmt->SetData(2, permanent);
         CharacterDatabase.Execute(stmt);
+
+        if (player)
+            player->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_COMPLETE_RAID, 1);
     }
 
     if (bind.save != save)

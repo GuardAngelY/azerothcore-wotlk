@@ -1,23 +1,24 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "ScriptMgr.h"
+#include "CreatureScript.h"
 #include "ScriptedCreature.h"
 #include "SpellScript.h"
+#include "SpellScriptLoader.h"
 #include "TaskScheduler.h"
 #include "zulgurub.h"
 
@@ -30,7 +31,7 @@ enum Spells
 {
     SPELL_BRAIN_WASH_TOTEM          = 24262,
     SPELL_POWERFULL_HEALING_WARD    = 24309,
-    SPELL_HEX                       = 24053,
+    SPELL_HEX                       = 17172,
     SPELL_DELUSIONS_OF_JINDO        = 24306,
     SPELL_SUMMON_SHADE_OF_JINDO     = 24308,
     SPELL_BANISH                    = 24466,
@@ -58,14 +59,14 @@ struct boss_jindo : public BossAI
 {
     boss_jindo(Creature* creature) : BossAI(creature, DATA_JINDO) { }
 
-    void EnterCombat(Unit* who) override
+    void JustEngagedWith(Unit* who) override
     {
-        BossAI::EnterCombat(who);
-        events.ScheduleEvent(EVENT_BRAIN_WASH_TOTEM, 20000);
-        events.ScheduleEvent(EVENT_POWERFULL_HEALING_WARD, 16000);
-        events.ScheduleEvent(EVENT_HEX, 8000);
-        events.ScheduleEvent(EVENT_DELUSIONS_OF_JINDO, 10000);
-        events.ScheduleEvent(EVENT_TELEPORT, 5000);
+        BossAI::JustEngagedWith(who);
+        events.ScheduleEvent(EVENT_BRAIN_WASH_TOTEM, 20s);
+        events.ScheduleEvent(EVENT_POWERFULL_HEALING_WARD, 16s);
+        events.ScheduleEvent(EVENT_HEX, 8s);
+        events.ScheduleEvent(EVENT_DELUSIONS_OF_JINDO, 10s);
+        events.ScheduleEvent(EVENT_TELEPORT, 5s);
 
         Talk(SAY_AGGRO);
 
@@ -93,7 +94,7 @@ struct boss_jindo : public BossAI
 
     void EnterEvadeMode(EvadeReason evadeReason) override
     {
-        if (_EnterEvadeMode(evadeReason))
+        if (CreatureAI::_EnterEvadeMode(evadeReason))
         {
             Reset();
             me->SetUInt32Value(UNIT_NPC_EMOTESTATE, EMOTE_STATE_DANCE);
@@ -125,24 +126,24 @@ struct boss_jindo : public BossAI
             {
             case EVENT_BRAIN_WASH_TOTEM:
                 DoCastSelf(SPELL_BRAIN_WASH_TOTEM);
-                events.ScheduleEvent(EVENT_BRAIN_WASH_TOTEM, urand(18000, 26000));
+                events.ScheduleEvent(EVENT_BRAIN_WASH_TOTEM, 18s, 26s);
                 break;
             case EVENT_POWERFULL_HEALING_WARD:
                 DoCastSelf(SPELL_POWERFULL_HEALING_WARD, true);
-                events.ScheduleEvent(EVENT_POWERFULL_HEALING_WARD, urand(14000, 20000));
+                events.ScheduleEvent(EVENT_POWERFULL_HEALING_WARD, 14s, 20s);
                 break;
             case EVENT_HEX:
                 if (me->GetThreatMgr().GetThreatListSize() > 1)
                     DoCastVictim(SPELL_HEX, true);
-                events.ScheduleEvent(EVENT_HEX, urand(12000, 20000));
+                events.ScheduleEvent(EVENT_HEX, 12s, 20s);
                 break;
             case EVENT_DELUSIONS_OF_JINDO:
                 DoCastRandomTarget(SPELL_DELUSIONS_OF_JINDO);
-                events.ScheduleEvent(EVENT_DELUSIONS_OF_JINDO, urand(4000, 12000));
+                events.ScheduleEvent(EVENT_DELUSIONS_OF_JINDO, 4s, 12s);
                 break;
             case EVENT_TELEPORT:
                 DoCastRandomTarget(SPELL_BANISH);
-                events.ScheduleEvent(EVENT_TELEPORT, urand(15000, 23000));
+                events.ScheduleEvent(EVENT_TELEPORT, 15s, 23s);
                 break;
             default:
                 break;
@@ -150,24 +151,6 @@ struct boss_jindo : public BossAI
         }
 
         DoMeleeAttackIfReady();
-    }
-
-    bool CanAIAttack(Unit const* target) const override
-    {
-        if (me->GetThreatMgr().GetThreatListSize() > 1)
-        {
-            ThreatContainer::StorageType::const_iterator lastRef = me->GetThreatMgr().GetOnlineContainer().GetThreatList().end();
-            --lastRef;
-            if (Unit* lastTarget = (*lastRef)->getTarget())
-            {
-                if (lastTarget != target)
-                {
-                    return !target->HasAura(SPELL_HEX);
-                }
-            }
-        }
-
-        return true;
     }
 
 private:
@@ -187,7 +170,7 @@ struct npc_healing_ward : public ScriptedAI
         _scheduler.CancelAll();
     }
 
-    void EnterCombat(Unit* /*who*/) override
+    void JustEngagedWith(Unit* /*who*/) override
     {
         _scheduler.
             Schedule(2s, [this](TaskContext context)
@@ -217,7 +200,7 @@ struct npc_shade_of_jindo : public ScriptedAI
 {
     npc_shade_of_jindo(Creature* creature) : ScriptedAI(creature) { }
 
-    void IsSummonedBy(Unit* /*summoner*/) override
+    void IsSummonedBy(WorldObject* /*summoner*/) override
     {
         DoZoneInCombat();
         DoCastSelf(SPELL_SHADE_OF_JINDO_PASSIVE, true);
@@ -237,7 +220,7 @@ struct npc_shade_of_jindo : public ScriptedAI
             });
     }
 
-    void EnterCombat(Unit* /*who*/) override
+    void JustEngagedWith(Unit* /*who*/) override
     {
         _scheduler.
             Schedule(1s, [this](TaskContext context)

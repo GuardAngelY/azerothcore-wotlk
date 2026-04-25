@@ -1,14 +1,14 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
@@ -68,14 +68,19 @@ void CombatAI::JustDied(Unit* killer)
             me->CastSpell(killer, *i, true);
 }
 
-void CombatAI::EnterCombat(Unit* who)
+/**
+ * @brief Called for reaction when initially engaged
+ *
+ * @param who Who 'me' Engaged combat with
+ */
+void CombatAI::JustEngagedWith(Unit* who)
 {
     for (SpellVct::iterator i = spells.begin(); i != spells.end(); ++i)
     {
         if (AISpellInfo[*i].condition == AICOND_AGGRO)
             me->CastSpell(who, *i, false);
         else if (AISpellInfo[*i].condition == AICOND_COMBAT)
-            events.ScheduleEvent(*i, AISpellInfo[*i].cooldown + rand() % AISpellInfo[*i].cooldown);
+            events.ScheduleEvent(*i, Milliseconds(AISpellInfo[*i].cooldown + rand() % AISpellInfo[*i].cooldown));
     }
 }
 
@@ -92,7 +97,7 @@ void CombatAI::UpdateAI(uint32 diff)
     if (uint32 spellId = events.ExecuteEvent())
     {
         DoCast(spellId);
-        events.ScheduleEvent(spellId, AISpellInfo[spellId].cooldown + rand() % AISpellInfo[spellId].cooldown);
+        events.ScheduleEvent(spellId, Milliseconds(AISpellInfo[spellId].cooldown + rand() % AISpellInfo[spellId].cooldown));
     }
     else
         DoMeleeAttackIfReady();
@@ -114,7 +119,12 @@ void CasterAI::InitializeAI()
         m_attackDist = MELEE_RANGE;
 }
 
-void CasterAI::EnterCombat(Unit* who)
+/**
+ * @brief Called for reaction when initially engaged
+ *
+ * @param who Who 'me' Engaged combat with
+ */
+void CasterAI::JustEngagedWith(Unit* who)
 {
     if (spells.empty())
         return;
@@ -133,7 +143,7 @@ void CasterAI::EnterCombat(Unit* who)
                 DoCast(spells[spell]);
                 cooldown += me->GetCurrentSpellCastTime(*itr);
             }
-            events.ScheduleEvent(*itr, cooldown);
+            events.ScheduleEvent(*itr, Milliseconds(cooldown));
         }
     }
 }
@@ -158,7 +168,7 @@ void CasterAI::UpdateAI(uint32 diff)
     {
         DoCast(spellId);
         uint32 casttime = me->GetCurrentSpellCastTime(spellId);
-        events.ScheduleEvent(spellId, (casttime ? casttime : 500) + GetAISpellInfo(spellId)->realCooldown);
+        events.ScheduleEvent(spellId, Milliseconds((casttime ? casttime : 500) + GetAISpellInfo(spellId)->realCooldown));
     }
 }
 
@@ -228,7 +238,7 @@ TurretAI::TurretAI(Creature* c) : CreatureAI(c)
 
 bool TurretAI::CanAIAttack(Unit const* /*who*/) const
 {
-    // TODO: use one function to replace it
+    /// @todo: use one function to replace it
     if (!me->IsWithinCombatRange(me->GetVictim(), me->m_CombatDistance)
             || (m_minRange && me->IsWithinCombatRange(me->GetVictim(), m_minRange)))
         return false;
@@ -246,7 +256,7 @@ void TurretAI::UpdateAI(uint32 /*diff*/)
     if (!UpdateVictim())
         return;
 
-    if( me->m_spells[0] )
+    if (me->m_spells[0])
         DoSpellAttackIfReady(me->m_spells[0]);
 }
 

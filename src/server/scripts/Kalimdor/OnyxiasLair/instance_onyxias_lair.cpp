@@ -1,33 +1,34 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "ScriptMgr.h"
+#include "InstanceMapScript.h"
 #include "ScriptedCreature.h"
 #include "onyxias_lair.h"
 
 ObjectData const creatureData[] =
 {
-    { NPC_ONYXIA, DATA_ONYXIA }
+    { NPC_ONYXIA, DATA_ONYXIA },
+    { 0,          0           }
 };
 
 class instance_onyxias_lair : public InstanceMapScript
 {
 public:
-    instance_onyxias_lair() : InstanceMapScript("instance_onyxias_lair", 249) { }
+    instance_onyxias_lair() : InstanceMapScript("instance_onyxias_lair", MAP_ONYXIAS_LAIR) { }
 
     InstanceScript* GetInstanceScript(InstanceMap* pMap) const override
     {
@@ -44,6 +45,7 @@ public:
 
         void Initialize() override
         {
+            SetHeaders(DataHeader);
             SetBossNumber(MAX_ENCOUNTER);
             ManyWhelpsCounter = 0;
             bDeepBreath = true;
@@ -93,53 +95,9 @@ public:
             }
         }
 
-        std::string GetSaveData() override
-        {
-            OUT_SAVE_INST_DATA;
-            std::ostringstream saveStream;
-            saveStream << "O L " << GetBossSaveData();
-            str_data = saveStream.str();
-            OUT_SAVE_INST_DATA_COMPLETE;
-            return str_data;
-        }
-
-        void Load(const char* in) override
-        {
-            if (!in)
-            {
-                OUT_LOAD_INST_DATA_FAIL;
-                return;
-            }
-
-            OUT_LOAD_INST_DATA(in);
-
-            char dataHead1, dataHead2;
-            uint16 data0;
-            std::istringstream loadStream(in);
-            loadStream >> dataHead1 >> dataHead2 >> data0;
-
-            if (dataHead1 == 'O' && dataHead2 == 'L')
-            {
-                for (uint32 i = 0; i < MAX_ENCOUNTER; ++i)
-                {
-                    uint32 tmpState;
-                    loadStream >> tmpState;
-                    if (tmpState == IN_PROGRESS || tmpState == FAIL || tmpState > SPECIAL)
-                    {
-                        tmpState = NOT_STARTED;
-                    }
-                    SetBossState(i, EncounterState(tmpState));
-                }
-            }
-            else
-                OUT_LOAD_INST_DATA_FAIL;
-
-            OUT_LOAD_INST_DATA_COMPLETE;
-        }
-
         bool CheckAchievementCriteriaMeet(uint32 criteria_id, Player const*  /*source*/, Unit const*  /*target*/, uint32  /*miscvalue1*/) override
         {
-            switch(criteria_id)
+            switch (criteria_id)
             {
                 case ACHIEV_CRITERIA_MANY_WHELPS_10_PLAYER:
                 case ACHIEV_CRITERIA_MANY_WHELPS_25_PLAYER:

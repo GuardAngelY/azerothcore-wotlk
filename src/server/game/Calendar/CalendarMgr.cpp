@@ -1,14 +1,14 @@
 /*
  * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Affero General Public License as published by the
- * Free Software Foundation; either version 3 of the License, or (at your
- * option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along
@@ -154,25 +154,26 @@ void CalendarMgr::AddInvite(CalendarEvent* calendarEvent, CalendarInvite* invite
     }
 }
 
-void CalendarMgr::RemoveEvent(uint64 eventId, ObjectGuid remover)
+CalendarEventStore::iterator CalendarMgr::RemoveEvent(uint64 eventId, ObjectGuid remover)
 {
-    CalendarEvent* calendarEvent = GetEvent(eventId);
+    CalendarEventStore::iterator current;
+    CalendarEvent* calendarEvent = GetEvent(eventId, &current);
 
     if (!calendarEvent)
     {
         SendCalendarCommandResult(remover, CALENDAR_ERROR_EVENT_INVALID);
-        return;
+        return _events.end();
     }
 
-    RemoveEvent(calendarEvent, remover);
+    CalendarEventStore::const_iterator constItr(current);
+    return RemoveEvent(calendarEvent, remover, &constItr);
 }
 
-void CalendarMgr::RemoveEvent(CalendarEvent* calendarEvent, ObjectGuid remover)
-{
+CalendarEventStore::iterator CalendarMgr::RemoveEvent(CalendarEvent* calendarEvent, ObjectGuid remover, CalendarEventStore::const_iterator* currIt) {
     if (!calendarEvent)
     {
         SendCalendarCommandResult(remover, CALENDAR_ERROR_EVENT_INVALID);
-        return;
+        return _events.end();
     }
 
     SendCalendarEventRemovedAlert(*calendarEvent);
@@ -182,7 +183,7 @@ void CalendarMgr::RemoveEvent(CalendarEvent* calendarEvent, ObjectGuid remover)
     MailDraft mail(calendarEvent->BuildCalendarMailSubject(remover), calendarEvent->BuildCalendarMailBody());
 
     CalendarInviteStore& eventInvites = _invites[calendarEvent->GetEventId()];
-    for (size_t i = 0; i < eventInvites.size(); ++i)
+    for (std::size_t i = 0; i < eventInvites.size(); ++i)
     {
         CalendarInvite* invite = eventInvites[i];
         stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_CALENDAR_INVITE);
@@ -204,9 +205,20 @@ void CalendarMgr::RemoveEvent(CalendarEvent* calendarEvent, ObjectGuid remover)
     trans->Append(stmt);
     CharacterDatabase.CommitTransaction(trans);
 
+    if (currIt)
+    {
+        delete calendarEvent;
+        return _events.erase(*currIt);
+    }
+
+    if (auto it = _events.find(calendarEvent); it != _events.end())
+    {
+        delete calendarEvent;
+        return _events.erase(it);
+    }
+
     delete calendarEvent;
-    _events.erase(calendarEvent);
-    return;
+    return _events.end();
 }
 
 void CalendarMgr::RemoveInvite(uint64 inviteId, uint64 eventId, ObjectGuid /*remover*/)
@@ -277,13 +289,12 @@ void CalendarMgr::RemoveAllPlayerEventsAndInvites(ObjectGuid guid)
 {
     for (CalendarEventStore::const_iterator itr = _events.begin(); itr != _events.end();)
     {
-        CalendarEvent* event = *itr;
-        ++itr;
-        if (event->GetCreatorGUID() == guid)
+        if (CalendarEvent* event = *itr; event->GetCreatorGUID() == guid)
         {
-            RemoveEvent(event, ObjectGuid::Empty);
+            itr = RemoveEvent(event, ObjectGuid::Empty, &itr);
             continue;
         }
+        ++itr;
     }
 
     CalendarInviteStore playerInvites = GetPlayerInvites(guid);
@@ -293,22 +304,33 @@ void CalendarMgr::RemoveAllPlayerEventsAndInvites(ObjectGuid guid)
 
 void CalendarMgr::RemovePlayerGuildEventsAndSignups(ObjectGuid guid, uint32 guildId)
 {
-    for (CalendarEventStore::const_iterator itr = _events.begin(); itr != _events.end(); ++itr)
+    for (CalendarEventStore::const_iterator itr = _events.begin(); itr != _events.end();)
+    {
         if ((*itr)->GetCreatorGUID() == guid && ((*itr)->IsGuildEvent() || (*itr)->IsGuildAnnouncement()))
-            RemoveEvent((*itr)->GetEventId(), guid);
+        {
+            itr = RemoveEvent((*itr)->GetEventId(), guid);
+            continue;
+        }
+        ++itr;
+    }
 
     CalendarInviteStore playerInvites = GetPlayerInvites(guid);
     for (CalendarInviteStore::const_iterator itr = playerInvites.begin(); itr != playerInvites.end(); ++itr)
-        if (CalendarEvent* calendarEvent = GetEvent((*itr)->GetEventId()))
+        if (CalendarEvent* calendarEvent = GetEvent((*itr)->GetEventId(), nullptr))
             if (calendarEvent->IsGuildEvent() && calendarEvent->GetGuildId() == guildId)
                 RemoveInvite((*itr)->GetInviteId(), (*itr)->GetEventId(), guid);
 }
 
-CalendarEvent* CalendarMgr::GetEvent(uint64 eventId)
+CalendarEvent* CalendarMgr::GetEvent(uint64 eventId, CalendarEventStore::iterator* it)
 {
     for (CalendarEventStore::iterator itr = _events.begin(); itr != _events.end(); ++itr)
         if ((*itr)->GetEventId() == eventId)
+        {
+            if (it)
+                *it = itr;
+
             return *itr;
+        }
 
     return nullptr;
 }
@@ -366,10 +388,12 @@ void CalendarMgr::DeleteOldEvents()
 
     for (CalendarEventStore::const_iterator itr = _events.begin(); itr != _events.end();)
     {
-        CalendarEvent* event = *itr;
+        if (CalendarEvent* event = *itr; event->GetEventTime() < oldEventsTime)
+        {
+            itr = RemoveEvent(event, ObjectGuid::Empty, &itr);
+            continue;
+        }
         ++itr;
-        if (event->GetEventTime() < oldEventsTime)
-            RemoveEvent(event, ObjectGuid::Empty);
     }
 }
 
@@ -459,7 +483,7 @@ uint32 CalendarMgr::GetPlayerNumPending(ObjectGuid guid)
 std::string CalendarEvent::BuildCalendarMailSubject(ObjectGuid remover) const
 {
     std::ostringstream strm;
-    strm << remover.ToString().c_str() << ':' << _title;
+    strm << remover.ToString() << ':' << _title;
     return strm.str();
 }
 
@@ -485,7 +509,7 @@ void CalendarMgr::SendCalendarEventInvite(CalendarInvite const& invite)
     ObjectGuid invitee = invite.GetInviteeGUID();
     Player* player = ObjectAccessor::FindConnectedPlayer(invitee);
 
-    uint8 level = player ? player->getLevel() : sCharacterCache->GetCharacterLevelByGuid(invitee);
+    uint8 level = player ? player->GetLevel() : sCharacterCache->GetCharacterLevelByGuid(invitee);
 
     WorldPacket data(SMSG_CALENDAR_EVENT_INVITE, 8 + 8 + 8 + 1 + 1 + 1 + (statusTime ? 4 : 0) + 1);
     data << invitee.WriteAsPacked();
@@ -630,7 +654,7 @@ void CalendarMgr::SendCalendarEvent(ObjectGuid guid, CalendarEvent const& calend
         ObjectGuid inviteeGuid = calendarInvite->GetInviteeGUID();
         Player* invitee = ObjectAccessor::FindConnectedPlayer(inviteeGuid);
 
-        uint8 inviteeLevel = invitee ? invitee->getLevel() : sCharacterCache->GetCharacterLevelByGuid(inviteeGuid);
+        uint8 inviteeLevel = invitee ? invitee->GetLevel() : sCharacterCache->GetCharacterLevelByGuid(inviteeGuid);
         uint32 inviteeGuildId = invitee ? invitee->GetGuildId() : sCharacterCache->GetCharacterGuildIdByGuid(inviteeGuid);
 
         data << inviteeGuid.WriteAsPacked();
