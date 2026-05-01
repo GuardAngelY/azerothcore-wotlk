@@ -12551,8 +12551,7 @@ bool Player::HasItemFitToSpellRequirements(SpellInfo const* spellInfo, Item cons
                             return true;
 
                     // Keep active non-passive auras (e.g. Shield Wall) when disarmed
-                    Item* offhand = GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_OFFHAND);
-                    if (!spellInfo->IsPassive() && offhand && offhand != ignoreItem)
+                    if (!spellInfo->IsPassive() && HasAuraType(SPELL_AURA_MOD_DISARM_OFFHAND) && GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_OFFHAND))
                     {
                         for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
                             if (spellInfo->Effects[i].IsAura())
@@ -14346,6 +14345,9 @@ bool Player::CanSeeSpellClickOn(Creature const* c) const
 
 bool Player::CanSeeObjectByVisibilityConditions(WorldObject const* object) const
 {
+    if (IsGameMaster())
+        return true;
+
     ConditionList conds = sConditionMgr->GetConditionsForObjectVisibility(object);
     ConditionSourceInfo info = ConditionSourceInfo(const_cast<Player*>(this), const_cast<WorldObject*>(object));
     return sConditionMgr->IsObjectMeetToConditions(info, conds);
